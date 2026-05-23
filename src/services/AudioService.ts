@@ -45,7 +45,7 @@ export class NativeAudioService implements AudioService {
     this.recordingAudioFile = audioFile;
     this.workflowState = 'recording';
 
-    this.recorderProcess.once('exit', (code) => {
+    this.recorderProcess.once('exit', (code: number | null) => {
       if (this.workflowState === 'recording' && code !== 0) {
         this.workflowState = 'idle';
       }
@@ -70,7 +70,7 @@ export class NativeAudioService implements AudioService {
     recorderProcess.stdin.write('\n');
     recorderProcess.stdin.end();
 
-    return new Promise((resolve, reject) => {
+    return new Promise<TemporaryAudioFile | undefined>((resolve, reject) => {
       let stderr = '';
 
       recorderProcess.stderr.on('data', (chunk: Buffer) => {
@@ -78,7 +78,7 @@ export class NativeAudioService implements AudioService {
       });
 
       recorderProcess.once('error', reject);
-      recorderProcess.once('close', (code) => {
+      recorderProcess.once('close', (code: number | null) => {
         this.recorderProcess = undefined;
         this.recordingAudioFile = undefined;
 
@@ -121,7 +121,7 @@ export class NativeAudioService implements AudioService {
 }
 
 function waitForRecorderStartup(recorderProcess: ChildProcessWithoutNullStreams): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve: () => void, reject: (reason?: unknown) => void) => {
     let stderr = '';
     const startupTimeout = setTimeout(resolve, 500);
 
@@ -129,12 +129,12 @@ function waitForRecorderStartup(recorderProcess: ChildProcessWithoutNullStreams)
       stderr += chunk.toString();
     });
 
-    recorderProcess.once('error', (error) => {
+    recorderProcess.once('error', (error: Error) => {
       clearTimeout(startupTimeout);
       reject(error);
     });
 
-    recorderProcess.once('exit', (code) => {
+    recorderProcess.once('exit', (code: number | null) => {
       clearTimeout(startupTimeout);
 
       if (code && code !== 0) {

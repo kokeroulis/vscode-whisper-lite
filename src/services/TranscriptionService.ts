@@ -36,6 +36,12 @@ export type Transcription = {
   whisperJson?: WhisperJsonOutput;
 };
 
+type WhisperRuntimePaths = {
+  cliPath: string;
+  modelPath: string;
+  vadModelPath: string;
+};
+
 export interface TranscriptionService {
   transcribeAudio(
     audioFile: TemporaryAudioFile,
@@ -113,7 +119,7 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
 
     this.whisperProcess = spawn(whisperRuntime.cliPath, args);
 
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       let stderr = '';
 
       this.whisperProcess?.stderr.on('data', (chunk: Buffer) => {
@@ -121,7 +127,7 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
       });
 
       this.whisperProcess?.once('error', reject);
-      this.whisperProcess?.once('close', (code) => {
+      this.whisperProcess?.once('close', (code: number | null) => {
         if (code && code !== 0) {
           reject(new Error(stderr.trim() || `whisper-cli exited with code ${code}.`));
           return;
@@ -133,7 +139,7 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
   }
 }
 
-function getWhisperRuntimePaths(context: vscode.ExtensionContext) {
+function getWhisperRuntimePaths(context: vscode.ExtensionContext): WhisperRuntimePaths {
   const runtimeRoot = path.join(context.extensionPath, 'vendor', 'whisper');
 
   return {

@@ -26,12 +26,17 @@
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
     "@types/node": "^20.14.8",
     "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "eslint": "^9.39.4",
     "typescript": "^5.5.2"
   }
 }

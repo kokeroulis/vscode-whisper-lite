@@ -6,7 +6,7 @@ import { WhisperCliTranscriptionService } from './services/TranscriptionService'
 
 let transcriptionPanelController: TranscriptionPanelController | undefined;
 
-export async function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   transcriptionPanelController = new TranscriptionPanelController(
     context,
     new NativeAudioService(context),
@@ -18,14 +18,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const openUiCommand = vscode.commands.registerCommand(
     'vscode-whisper-lite.openTranscriptions',
-    () => {
+    (): void => {
       void transcriptionPanelController?.open();
     }
   );
   const panelSerializer = vscode.window.registerWebviewPanelSerializer(
     'whisperLiteTranscriptions',
     {
-      async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel) {
+      async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel): Promise<void> {
         await transcriptionPanelController?.restore(webviewPanel);
       }
     }
@@ -34,6 +34,6 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(openUiCommand, panelSerializer, transcriptionPanelController);
 }
 
-export function deactivate() {
+export function deactivate(): void {
   transcriptionPanelController?.dispose();
 }
