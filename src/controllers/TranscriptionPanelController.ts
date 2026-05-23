@@ -5,6 +5,7 @@ import { FileSystemService } from '../services/FileSystemService';
 type WebviewMessage =
   | { type: 'startTranscription' }
   | { type: 'stopTranscription' }
+  | { type: 'cancelTranscription' }
   | { type: 'copyTranscription'; id: string }
   | { type: 'deleteTranscription'; id: string };
 
@@ -21,12 +22,6 @@ export class TranscriptionPanelController implements vscode.Disposable {
 
   async initialize(): Promise<void> {
     this.transcriptions = await this.fileSystemService.loadTranscriptions();
-
-    for (const transcription of this.transcriptions) {
-      this.audioService.resumeTranscription(transcription, (updatedTranscription) => {
-        void this.updateTranscription(updatedTranscription);
-      });
-    }
   }
 
   open(): void {
@@ -76,7 +71,11 @@ export class TranscriptionPanelController implements vscode.Disposable {
         return;
 
       case 'stopTranscription':
-        await this.stopTranscriptions();
+        await this.stopTranscription();
+        return;
+
+      case 'cancelTranscription':
+        this.cancelTranscription();
         return;
 
       case 'copyTranscription':
@@ -90,46 +89,36 @@ export class TranscriptionPanelController implements vscode.Disposable {
   }
 
   private async startTranscription(): Promise<void> {
-    const transcription = this.audioService.startTranscription((updatedTranscription) => {
-      void this.updateTranscription(updatedTranscription);
-    });
+    this.audioService.startRecording();
+    this.postStateToWebview();
+  }
+
+  private async stopTranscription(): Promise<void> {
+    const transcriptionPromise = this.audioService.stopRecording();
+
+    this.postStateToWebview();
+
+    const transcription = await transcriptionPromise;
+
+    if (!transcription) {
+      this.postStateToWebview();
+      return;
+    }
 
     this.transcriptions = [transcription, ...this.transcriptions];
     await this.saveAndRender();
   }
 
-  private async stopTranscriptions(): Promise<void> {
-    const stoppedIds = this.audioService.stopAllTranscriptions();
-    const stoppedAt = Date.now();
-    const stoppedIdSet = new Set(stoppedIds);
-
-    this.transcriptions = this.transcriptions.map((transcription) => {
-      if (!stoppedIdSet.has(transcription.id)) {
-        return transcription;
-      }
-
-      return {
-        ...transcription,
-        stoppedAt
-      };
-    });
-
-    await this.saveAndRender();
-  }
-
-  private async updateTranscription(updatedTranscription: Transcription): Promise<void> {
-    this.transcriptions = this.transcriptions.map((transcription) => {
-      if (transcription.id !== updatedTranscription.id) {
-        return transcription;
-      }
-
-      return updatedTranscription;
-    });
-
-    await this.saveAndRender();
+  private cancelTranscription(): void {
+    this.audioService.cancelTranscription();
+    this.postStateToWebview();
   }
 
   private async copyTranscription(id: string): Promise<void> {
+    if (this.isUiBlocked()) {
+      return;
+    }
+
     const transcription = this.transcriptions.find((item) => item.id === id);
 
     if (!transcription) {
@@ -142,7 +131,10 @@ export class TranscriptionPanelController implements vscode.Disposable {
   }
 
   private async deleteTranscription(id: string): Promise<void> {
-    this.audioService.stopTranscription(id);
+    if (this.isUiBlocked()) {
+      return;
+    }
+
     this.transcriptions = this.transcriptions.filter((item) => item.id !== id);
     await this.saveAndRender();
   }
@@ -160,8 +152,13 @@ export class TranscriptionPanelController implements vscode.Disposable {
     void this.panel.webview.postMessage({
       type: 'state',
       transcriptions: this.transcriptions,
-      isTranscriptionInProgress: this.audioService.isTranscriptionInProgress()
+      workflowState: this.audioService.getWorkflowState(),
+      isUiBlocked: this.isUiBlocked()
     });
+  }
+
+  private isUiBlocked(): boolean {
+    return this.audioService.getWorkflowState() === 'translating';
   }
 
   private getWebviewHtml(webview: vscode.Webview): string {
@@ -189,6 +186,9 @@ export class TranscriptionPanelController implements vscode.Disposable {
       --warning: #d9a441;
       --warning-hover: #c58f2f;
       --warning-text: #1f1f1f;
+      --cancel: var(--vscode-errorForeground);
+      --cancel-hover: #b83b3b;
+      --cancel-text: #ffffff;
       --danger: var(--vscode-errorForeground);
       --focus: var(--vscode-focusBorder);
     }
@@ -264,6 +264,15 @@ export class TranscriptionPanelController implements vscode.Disposable {
       background: var(--warning-hover);
     }
 
+    .primary-button.cancel {
+      background: var(--cancel);
+      color: var(--cancel-text);
+    }
+
+    .primary-button.cancel:hover {
+      background: var(--cancel-hover);
+    }
+
     button:focus-visible {
       outline: 1px solid var(--focus);
       outline-offset: 2px;
@@ -325,6 +334,16 @@ export class TranscriptionPanelController implements vscode.Disposable {
       background: var(--vscode-toolbar-hoverBackground);
     }
 
+    .icon-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    .icon-button:disabled:hover {
+      background: transparent;
+      color: var(--text);
+    }
+
     .icon-button.delete:hover {
       color: var(--danger);
     }
@@ -381,11 +400,12 @@ export class TranscriptionPanelController implements vscode.Disposable {
     const statusLabel = document.getElementById('statusLabel');
     const transcriptionList = document.getElementById('transcriptionList');
     let transcriptions = [];
-    let isTranscriptionInProgress = false;
+    let workflowState = 'idle';
+    let isUiBlocked = false;
 
     transcriptionToggle.addEventListener('click', () => {
       vscode.postMessage({
-        type: isTranscriptionInProgress ? 'stopTranscription' : 'startTranscription'
+        type: getToggleMessageType()
       });
     });
 
@@ -395,7 +415,8 @@ export class TranscriptionPanelController implements vscode.Disposable {
       }
 
       transcriptions = event.data.transcriptions;
-      isTranscriptionInProgress = Boolean(event.data.isTranscriptionInProgress);
+      workflowState = event.data.workflowState;
+      isUiBlocked = Boolean(event.data.isUiBlocked);
       render();
     });
 
@@ -413,13 +434,10 @@ export class TranscriptionPanelController implements vscode.Disposable {
     });
 
     function render() {
-      transcriptionToggle.textContent = isTranscriptionInProgress
-        ? 'Stop transcription'
-        : 'Start transcription';
-      transcriptionToggle.classList.toggle('running', isTranscriptionInProgress);
-      statusLabel.textContent = isTranscriptionInProgress
-        ? 'Transcription in progress'
-        : '';
+      transcriptionToggle.textContent = getToggleLabel();
+      transcriptionToggle.classList.toggle('running', workflowState === 'recording');
+      transcriptionToggle.classList.toggle('cancel', workflowState === 'translating');
+      statusLabel.textContent = getStatusLabel();
 
       if (transcriptions.length === 0) {
         transcriptionList.innerHTML = '<p class="empty-state">No active transcriptions yet.</p>';
@@ -456,12 +474,49 @@ export class TranscriptionPanelController implements vscode.Disposable {
       return item;
     }
 
+    function getToggleMessageType() {
+      if (workflowState === 'recording') {
+        return 'stopTranscription';
+      }
+
+      if (workflowState === 'translating') {
+        return 'cancelTranscription';
+      }
+
+      return 'startTranscription';
+    }
+
+    function getToggleLabel() {
+      if (workflowState === 'recording') {
+        return 'Stop transcription';
+      }
+
+      if (workflowState === 'translating') {
+        return 'Cancel transcription';
+      }
+
+      return 'Start transcription';
+    }
+
+    function getStatusLabel() {
+      if (workflowState === 'recording') {
+        return 'Transcription in progress';
+      }
+
+      if (workflowState === 'translating') {
+        return 'Translating audio into text';
+      }
+
+      return '';
+    }
+
     function createIconButton(action, id, label, icon, extraClass = '') {
       const button = document.createElement('button');
       button.className = \`icon-button \${extraClass}\`.trim();
       button.type = 'button';
       button.dataset.action = action;
       button.dataset.id = id;
+      button.disabled = isUiBlocked;
       button.setAttribute('aria-label', label);
       button.title = label;
       button.innerHTML = icon;

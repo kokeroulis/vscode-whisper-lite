@@ -44,9 +44,10 @@ In the Extension Development Host window:
 2. Search for `Whisper Lite: Open Transcriptions`.
 3. Run the command.
 4. Click `Start transcription` in the Whisper Lite panel.
-5. Click `Stop transcription` to stop the current mock transcription.
+5. Click `Stop transcription` to stop recording and start the mock text translation step.
+6. Click `Cancel transcription` during translation if you want to discard the current recording.
 
-For now, each mock transcription writes `second 1`, `second 2`, `second 3`, and so on once per second. While a mock transcription is running, the panel shows `Transcription in progress` below the title. Each transcription row has icon buttons for copying its text to the clipboard and deleting it.
+For now, each completed mock transcription writes `second 1`, `second 2`, `second 3`, and so on based on how long recording lasted. While recording, the panel shows `Transcription in progress` below the title. After stopping, the panel briefly shows `Translating audio into text`; during that step the only available action is `Cancel transcription`. Canceling discards the current recording and does not add it to the transcription list.
 
 ## Saved Transcriptions
 

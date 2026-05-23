@@ -5,94 +5,90 @@ export type Transcription = {
   content: string;
 };
 
-export type TranscriptionUpdateHandler = (transcription: Transcription) => void;
+export type TranscriptionWorkflowState = 'idle' | 'recording' | 'translating';
 
 export interface AudioService {
-  startTranscription(onUpdate: TranscriptionUpdateHandler): Transcription;
-  resumeTranscription(transcription: Transcription, onUpdate: TranscriptionUpdateHandler): void;
-  stopTranscription(id: string): void;
-  stopAllTranscriptions(): string[];
-  isTranscriptionInProgress(): boolean;
+  startRecording(): void;
+  stopRecording(): Promise<Transcription | undefined>;
+  cancelTranscription(): void;
+  getWorkflowState(): TranscriptionWorkflowState;
   dispose(): void;
 }
 
-const tickIntervalMs = 1000;
+type RecordingSession = {
+  id: string;
+  startedAt: number;
+};
+
+const mockTranslationDelayMs = 2000;
 
 export class MockAudioService implements AudioService {
-  private readonly activeTimers = new Map<string, NodeJS.Timeout>();
+  private workflowState: TranscriptionWorkflowState = 'idle';
+  private recordingSession: RecordingSession | undefined;
+  private translationTimer: NodeJS.Timeout | undefined;
+  private translationResolver: ((transcription: Transcription | undefined) => void) | undefined;
 
-  startTranscription(onUpdate: TranscriptionUpdateHandler): Transcription {
-    const transcription: Transcription = {
+  startRecording(): void {
+    if (this.workflowState !== 'idle') {
+      return;
+    }
+
+    this.recordingSession = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      startedAt: Date.now(),
-      content: ''
+      startedAt: Date.now()
     };
-
-    const updatedTranscription = this.withMockContent(transcription);
-    this.startTimer(updatedTranscription, onUpdate);
-
-    return updatedTranscription;
+    this.workflowState = 'recording';
   }
 
-  resumeTranscription(transcription: Transcription, onUpdate: TranscriptionUpdateHandler): void {
-    if (transcription.stoppedAt || this.activeTimers.has(transcription.id)) {
-      return;
+  stopRecording(): Promise<Transcription | undefined> {
+    if (this.workflowState !== 'recording' || !this.recordingSession) {
+      return Promise.resolve(undefined);
     }
 
-    const updatedTranscription = this.withMockContent(transcription);
-    onUpdate(updatedTranscription);
-    this.startTimer(updatedTranscription, onUpdate);
+    const stoppedAt = Date.now();
+    const recordingSession = this.recordingSession;
+
+    this.workflowState = 'translating';
+
+    return new Promise((resolve) => {
+      this.translationResolver = resolve;
+      this.translationTimer = setTimeout(() => {
+        this.translationTimer = undefined;
+        this.translationResolver = undefined;
+        this.recordingSession = undefined;
+        this.workflowState = 'idle';
+
+        resolve({
+          ...recordingSession,
+          stoppedAt,
+          content: this.createMockContent(recordingSession.startedAt, stoppedAt)
+        });
+      }, mockTranslationDelayMs);
+    });
   }
 
-  stopTranscription(id: string): void {
-    const timer = this.activeTimers.get(id);
-
-    if (!timer) {
-      return;
+  cancelTranscription(): void {
+    if (this.translationTimer) {
+      clearTimeout(this.translationTimer);
+      this.translationTimer = undefined;
     }
 
-    clearInterval(timer);
-    this.activeTimers.delete(id);
+    this.translationResolver?.(undefined);
+    this.translationResolver = undefined;
+    this.recordingSession = undefined;
+    this.workflowState = 'idle';
   }
 
-  stopAllTranscriptions(): string[] {
-    const stoppedIds = Array.from(this.activeTimers.keys());
-
-    for (const id of stoppedIds) {
-      this.stopTranscription(id);
-    }
-
-    return stoppedIds;
-  }
-
-  isTranscriptionInProgress(): boolean {
-    return this.activeTimers.size > 0;
+  getWorkflowState(): TranscriptionWorkflowState {
+    return this.workflowState;
   }
 
   dispose(): void {
-    this.stopAllTranscriptions();
+    this.cancelTranscription();
   }
 
-  private startTimer(
-    transcription: Transcription,
-    onUpdate: TranscriptionUpdateHandler
-  ): void {
-    const timer = setInterval(() => {
-      onUpdate(this.withMockContent(transcription));
-    }, tickIntervalMs);
-
-    this.activeTimers.set(transcription.id, timer);
-  }
-
-  private withMockContent(transcription: Transcription): Transcription {
-    return {
-      ...transcription,
-      content: this.createMockContent(transcription.startedAt)
-    };
-  }
-
-  private createMockContent(startedAt: number): string {
-    const elapsedSeconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000) + 1);
+  private createMockContent(startedAt: number, stoppedAt: number): string {
+    const elapsedSeconds = Math.max(1, Math.ceil((stoppedAt - startedAt) / 1000));
     const seconds = Array.from({ length: elapsedSeconds }, (_, index) => `second ${index + 1}`);
 
     return seconds.join(', ');
