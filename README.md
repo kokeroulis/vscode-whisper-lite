@@ -44,10 +44,10 @@ In the Extension Development Host window:
 2. Search for `Whisper Lite: Open Transcriptions`.
 3. Run the command.
 4. Click `Start transcription` in the Whisper Lite panel.
-5. Click `Stop transcription` to stop recording and start the mock text translation step.
+5. Click `Stop transcription` to stop recording and start the Whisper.cpp transcription step.
 6. Click `Cancel transcription` during translation if you want to discard the current recording.
 
-For now, each completed mock transcription writes `second 1`, `second 2`, `second 3`, and so on based on how long recording lasted. While recording, the panel shows `Transcription in progress` below the title. After stopping, the panel briefly shows `Translating audio into text`; during that step the only available action is `Cancel transcription`. Canceling discards the current recording and does not add it to the transcription list.
+Each completed transcription displays the text returned by `whisper-cli`. While recording, the panel shows `Transcription in progress` below the title. After stopping, the panel shows `Translating audio into text`; during that step the only available action is `Cancel transcription`. Canceling discards the current recording and does not add it to the transcription list.
 
 Microphone recording is handled by a small macOS Swift helper launched by the extension host. The webview only sends UI actions to the extension. This avoids VS Code webview microphone sandbox limitations. When you first start recording, macOS may ask for microphone permission for VS Code or for the Swift helper process.
 
@@ -65,7 +65,7 @@ It is created under the extension-specific `globalStorageUri` managed by VS Code
 
 ## Temporary Audio Files
 
-Raw microphone audio is saved only as a temporary file while the mock translation step is running. These files are stored outside the repository in the operating system temp directory:
+Raw microphone audio is saved only as a temporary WAV file while the Whisper.cpp transcription step is running. These files are stored outside the repository in the operating system temp directory:
 
 ```text
 /var/folders/.../T/vscode-whisper-lite/
@@ -116,7 +116,8 @@ After changing extension code, reload the Extension Development Host window with
 │   │   └── TranscriptionPanelController.ts
 │   ├── services/
 │   │   ├── AudioService.ts
-│   │   └── FileSystemService.ts
+│   │   ├── FileSystemService.ts
+│   │   └── TranscriptionService.ts
 │   └── extension.ts
 ├── package.json
 ├── tsconfig.json

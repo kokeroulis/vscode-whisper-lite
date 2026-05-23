@@ -2,13 +2,6 @@ import * as path from 'node:path';
 import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import * as vscode from 'vscode';
 
-export type Transcription = {
-  id: string;
-  startedAt: number;
-  stoppedAt?: number;
-  content: string;
-};
-
 export type TemporaryAudioFile = {
   path: string;
   mimeType: string;
@@ -19,24 +12,17 @@ export type TranscriptionWorkflowState = 'idle' | 'recording' | 'translating';
 export interface AudioService {
   startRecording(audioFile: TemporaryAudioFile): Promise<void>;
   stopRecording(): Promise<TemporaryAudioFile | undefined>;
-  translateAudio(
-    audioFile: TemporaryAudioFile,
-    startedAt: number,
-    stoppedAt: number
-  ): Promise<Transcription | undefined>;
-  cancelTranscription(): void;
+  cancelRecording(): void;
+  markTranslating(): void;
+  markIdle(): void;
   getWorkflowState(): TranscriptionWorkflowState;
   dispose(): void;
 }
-
-const mockTranslationDelayMs = 2000;
 
 export class NativeAudioService implements AudioService {
   private workflowState: TranscriptionWorkflowState = 'idle';
   private recorderProcess: ChildProcessWithoutNullStreams | undefined;
   private recordingAudioFile: TemporaryAudioFile | undefined;
-  private translationTimer: NodeJS.Timeout | undefined;
-  private translationResolver: ((transcription: Transcription | undefined) => void) | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -107,46 +93,21 @@ export class NativeAudioService implements AudioService {
     });
   }
 
-  translateAudio(
-    audioFile: TemporaryAudioFile,
-    startedAt: number,
-    stoppedAt: number
-  ): Promise<Transcription | undefined> {
-    if (this.workflowState !== 'translating') {
-      return Promise.resolve(undefined);
-    }
-
-    return new Promise((resolve) => {
-      this.translationResolver = resolve;
-      this.translationTimer = setTimeout(() => {
-        this.translationTimer = undefined;
-        this.translationResolver = undefined;
-        this.workflowState = 'idle';
-
-        resolve({
-          id: `${stoppedAt}-${Math.random().toString(16).slice(2)}`,
-          startedAt,
-          stoppedAt,
-          content: this.createMockContent(startedAt, stoppedAt, audioFile.path)
-        });
-      }, mockTranslationDelayMs);
-    });
-  }
-
-  cancelTranscription(): void {
+  cancelRecording(): void {
     if (this.recorderProcess) {
       this.recorderProcess.kill('SIGTERM');
       this.recorderProcess = undefined;
     }
 
-    if (this.translationTimer) {
-      clearTimeout(this.translationTimer);
-      this.translationTimer = undefined;
-    }
-
-    this.translationResolver?.(undefined);
-    this.translationResolver = undefined;
     this.recordingAudioFile = undefined;
+    this.workflowState = 'idle';
+  }
+
+  markTranslating(): void {
+    this.workflowState = 'translating';
+  }
+
+  markIdle(): void {
     this.workflowState = 'idle';
   }
 
@@ -155,14 +116,7 @@ export class NativeAudioService implements AudioService {
   }
 
   dispose(): void {
-    this.cancelTranscription();
-  }
-
-  private createMockContent(startedAt: number, stoppedAt: number, audioPath: string): string {
-    const elapsedSeconds = Math.max(1, Math.ceil((stoppedAt - startedAt) / 1000));
-    const seconds = Array.from({ length: elapsedSeconds }, (_, index) => `second ${index + 1}`);
-
-    return `${seconds.join(', ')}\n\nMock audio file: ${audioPath}`;
+    this.cancelRecording();
   }
 }
 

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
-import { AudioService, Transcription } from '../services/AudioService';
+import { AudioService } from '../services/AudioService';
 import { FileSystemService } from '../services/FileSystemService';
+import { Transcription, TranscriptionService } from '../services/TranscriptionService';
 
 type WebviewMessage =
   | { type: 'startTranscription' }
@@ -18,6 +19,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly audioService: AudioService,
+    private readonly transcriptionService: TranscriptionService,
     private readonly fileSystemService: FileSystemService
   ) {}
 
@@ -58,6 +60,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
 
   dispose(): void {
     this.audioService.dispose();
+    this.transcriptionService.dispose();
 
     for (const disposable of this.disposables) {
       disposable.dispose();
@@ -91,7 +94,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
   }
 
   private async startTranscription(): Promise<void> {
-    const temporaryAudioFile = this.fileSystemService.createTemporaryAudioFile('audio/mp4');
+    const temporaryAudioFile = this.fileSystemService.createTemporaryAudioFile('audio/wav');
 
     try {
       await this.audioService.startRecording(temporaryAudioFile);
@@ -121,27 +124,29 @@ export class TranscriptionPanelController implements vscode.Disposable {
     }
 
     try {
-      const transcription = await this.audioService.translateAudio(
+      this.audioService.markTranslating();
+      this.postStateToWebview();
+
+      const transcription = await this.transcriptionService.transcribeAudio(
         temporaryAudioFile,
         startedAt,
         stopStartedAt
       );
 
-      if (!transcription) {
-        this.postStateToWebview();
-        return;
-      }
-
       this.transcriptions = [transcription, ...this.transcriptions];
       await this.saveAndRender();
     } finally {
       this.recordingStartedAt = undefined;
+      this.audioService.markIdle();
       await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
+      this.postStateToWebview();
     }
   }
 
   private cancelTranscription(): void {
-    this.audioService.cancelTranscription();
+    this.audioService.cancelRecording();
+    this.transcriptionService.cancelTranscription();
+    this.audioService.markIdle();
     this.recordingStartedAt = undefined;
     this.postStateToWebview();
   }

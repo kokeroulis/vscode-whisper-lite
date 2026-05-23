@@ -2,7 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { TemporaryAudioFile, Transcription } from './AudioService';
+import { TemporaryAudioFile } from './AudioService';
+import { Transcription } from './TranscriptionService';
 
 export type RecordedAudioPayload = {
   base64Audio: string;

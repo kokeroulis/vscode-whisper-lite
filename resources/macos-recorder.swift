@@ -41,10 +41,12 @@ if #available(macOS 10.14, *) {
 }
 
 let settings: [String: Any] = [
-  AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+  AVFormatIDKey: Int(kAudioFormatLinearPCM),
   AVSampleRateKey: 16_000,
   AVNumberOfChannelsKey: 1,
-  AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+  AVLinearPCMBitDepthKey: 16,
+  AVLinearPCMIsBigEndianKey: false,
+  AVLinearPCMIsFloatKey: false
 ]
 
 let recorder = try AVAudioRecorder(url: outputURL, settings: settings)
