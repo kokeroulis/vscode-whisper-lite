@@ -11,11 +11,15 @@ export default [
     ]
   },
   {
-    files: ['src/**/*.ts'],
+    files: [
+      'src/**/*.ts',
+      'tests/**/*.ts',
+      'vitest.config.ts'
+    ],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        project: './tsconfig.json',
+        project: './tsconfig.eslint.json',
         sourceType: 'module'
       }
     },

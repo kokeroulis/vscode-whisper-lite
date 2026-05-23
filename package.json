@@ -28,6 +28,8 @@
     "compile": "tsc -p ./",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile"
   },
@@ -37,6 +39,7 @@
     "@typescript-eslint/eslint-plugin": "^8.59.4",
     "@typescript-eslint/parser": "^8.59.4",
     "eslint": "^9.39.4",
-    "typescript": "^5.5.2"
+    "typescript": "^5.5.2",
+    "vitest": "^4.1.7"
   }
 }
