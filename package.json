@@ -1,0 +1,36 @@
+{
+  "name": "vscode-whisper-lite",
+  "displayName": "VS Code Whisper Lite",
+  "description": "A lightweight VS Code extension scaffold for future Whisper.cpp transcription support.",
+  "version": "0.0.1",
+  "publisher": "antonistsiapaliokas",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:vscode-whisper-lite.startTranscription"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscode-whisper-lite.startTranscription",
+        "title": "Whisper Lite: Start Transcription"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.8",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.2"
+  }
+}
