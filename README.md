@@ -73,6 +73,27 @@ Raw microphone audio is saved only as a temporary file while the mock translatio
 
 On macOS, the exact parent directory comes from Node's `os.tmpdir()`, so it can vary by machine and user session. The extension deletes the temporary audio file after translation finishes, and clears this temp folder when the extension starts.
 
+## Set Up Whisper.cpp
+
+To download, build, and package the local Whisper.cpp runtime for this extension:
+
+```sh
+scripts/setup-whisper-cpp-macos-arm64.sh
+```
+
+By default, this creates:
+
+```text
+vendor/whisper/
+  bin/
+    whisper-cli
+  models/
+    ggml-medium.en.bin
+    ggml-silero-v6.2.0.bin
+```
+
+The English-only medium Whisper model is used for transcription. Whisper.cpp model names ending in `.en` are English-only; models without that suffix are multilingual. The Silero model is for voice activity detection, which helps skip silence or background-only audio before transcription.
+
 ## Development Workflow
 
 During development, you can keep TypeScript compiling in watch mode:
