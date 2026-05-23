@@ -78,6 +78,11 @@ After changing extension code, reload the Extension Development Host window with
 │   ├── launch.json
 │   └── tasks.json
 ├── src/
+│   ├── controllers/
+│   │   └── TranscriptionPanelController.ts
+│   ├── services/
+│   │   ├── AudioService.ts
+│   │   └── FileSystemService.ts
 │   └── extension.ts
 ├── package.json
 ├── tsconfig.json
