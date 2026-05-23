@@ -13,6 +13,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
   private transcriptions: Transcription[] = [];
   private readonly disposables: vscode.Disposable[] = [];
+  private recordingStartedAt: number | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -21,6 +22,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
   ) {}
 
   async initialize(): Promise<void> {
+    await this.fileSystemService.clearTemporaryAudioFiles();
     this.transcriptions = await this.fileSystemService.loadTranscriptions();
   }
 
@@ -89,28 +91,58 @@ export class TranscriptionPanelController implements vscode.Disposable {
   }
 
   private async startTranscription(): Promise<void> {
-    this.audioService.startRecording();
-    this.postStateToWebview();
+    const temporaryAudioFile = this.fileSystemService.createTemporaryAudioFile('audio/mp4');
+
+    try {
+      await this.audioService.startRecording(temporaryAudioFile);
+      this.recordingStartedAt = Date.now();
+      this.postStateToWebview();
+    } catch (error) {
+      await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
+      this.postStateToWebview();
+      await vscode.window.showErrorMessage(
+        `Could not start microphone recording: ${getErrorMessage(error)}`
+      );
+    }
   }
 
   private async stopTranscription(): Promise<void> {
-    const transcriptionPromise = this.audioService.stopRecording();
+    const stopStartedAt = Date.now();
+    const startedAt = this.recordingStartedAt ?? stopStartedAt;
+    const audioFilePromise = this.audioService.stopRecording();
 
     this.postStateToWebview();
 
-    const transcription = await transcriptionPromise;
+    const temporaryAudioFile = await audioFilePromise;
 
-    if (!transcription) {
+    if (!temporaryAudioFile) {
       this.postStateToWebview();
       return;
     }
 
-    this.transcriptions = [transcription, ...this.transcriptions];
-    await this.saveAndRender();
+    try {
+      const transcription = await this.audioService.translateAudio(
+        temporaryAudioFile,
+        startedAt,
+        stopStartedAt
+      );
+
+      if (!transcription) {
+        this.postStateToWebview();
+        return;
+      }
+
+      this.transcriptions = [transcription, ...this.transcriptions];
+      await this.saveAndRender();
+    } finally {
+      this.recordingStartedAt = undefined;
+      await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
+    }
   }
 
   private cancelTranscription(): void {
     this.audioService.cancelTranscription();
+    this.recordingStartedAt = undefined;
     this.postStateToWebview();
   }
 
@@ -547,4 +579,12 @@ function getNonce(): string {
   }
 
   return text;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
 }

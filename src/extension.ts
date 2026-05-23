@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { TranscriptionPanelController } from './controllers/TranscriptionPanelController';
-import { MockAudioService } from './services/AudioService';
+import { NativeAudioService } from './services/AudioService';
 import { VsCodeFileSystemService } from './services/FileSystemService';
 
 let transcriptionPanelController: TranscriptionPanelController | undefined;
@@ -8,7 +8,7 @@ let transcriptionPanelController: TranscriptionPanelController | undefined;
 export async function activate(context: vscode.ExtensionContext) {
   transcriptionPanelController = new TranscriptionPanelController(
     context,
-    new MockAudioService(),
+    new NativeAudioService(context),
     new VsCodeFileSystemService(context)
   );
 

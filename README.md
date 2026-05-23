@@ -49,6 +49,8 @@ In the Extension Development Host window:
 
 For now, each completed mock transcription writes `second 1`, `second 2`, `second 3`, and so on based on how long recording lasted. While recording, the panel shows `Transcription in progress` below the title. After stopping, the panel briefly shows `Translating audio into text`; during that step the only available action is `Cancel transcription`. Canceling discards the current recording and does not add it to the transcription list.
 
+Microphone recording is handled by a small macOS Swift helper launched by the extension host. The webview only sends UI actions to the extension. This avoids VS Code webview microphone sandbox limitations. When you first start recording, macOS may ask for microphone permission for VS Code or for the Swift helper process.
+
 ## Saved Transcriptions
 
 Transcriptions are saved as JSON in VS Code's extension global storage directory. This keeps generated extension data outside the source repository while still persisting it between local VS Code sessions.
@@ -60,6 +62,16 @@ transcriptions.json
 ```
 
 It is created under the extension-specific `globalStorageUri` managed by VS Code.
+
+## Temporary Audio Files
+
+Raw microphone audio is saved only as a temporary file while the mock translation step is running. These files are stored outside the repository in the operating system temp directory:
+
+```text
+/var/folders/.../T/vscode-whisper-lite/
+```
+
+On macOS, the exact parent directory comes from Node's `os.tmpdir()`, so it can vary by machine and user session. The extension deletes the temporary audio file after translation finishes, and clears this temp folder when the extension starts.
 
 ## Development Workflow
 
