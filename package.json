@@ -12,7 +12,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:vscode-whisper-lite.openTranscriptions"
+    "onCommand:vscode-whisper-lite.openTranscriptions",
+    "onWebviewPanel:whisperLiteTranscriptions"
   ],
   "main": "./out/extension.js",
   "contributes": {

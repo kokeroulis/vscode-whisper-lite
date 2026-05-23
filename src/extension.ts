@@ -19,11 +19,19 @@ export async function activate(context: vscode.ExtensionContext) {
   const openUiCommand = vscode.commands.registerCommand(
     'vscode-whisper-lite.openTranscriptions',
     () => {
-      transcriptionPanelController?.open();
+      void transcriptionPanelController?.open();
+    }
+  );
+  const panelSerializer = vscode.window.registerWebviewPanelSerializer(
+    'whisperLiteTranscriptions',
+    {
+      async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel) {
+        await transcriptionPanelController?.restore(webviewPanel);
+      }
     }
   );
 
-  context.subscriptions.push(openUiCommand, transcriptionPanelController);
+  context.subscriptions.push(openUiCommand, panelSerializer, transcriptionPanelController);
 }
 
 export function deactivate() {

@@ -4,6 +4,7 @@ import { FileSystemService } from '../services/FileSystemService';
 import { Transcription, TranscriptionService } from '../services/TranscriptionService';
 
 type WebviewMessage =
+  | { type: 'webviewReady' }
   | { type: 'startTranscription' }
   | { type: 'stopTranscription' }
   | { type: 'cancelTranscription' }
@@ -28,9 +29,10 @@ export class TranscriptionPanelController implements vscode.Disposable {
     this.transcriptions = await this.fileSystemService.loadTranscriptions();
   }
 
-  open(): void {
+  async open(): Promise<void> {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
+      await this.reloadTranscriptions();
       this.postStateToWebview();
       return;
     }
@@ -45,17 +47,37 @@ export class TranscriptionPanelController implements vscode.Disposable {
       }
     );
 
-    this.panel.webview.html = this.getWebviewHtml(this.panel.webview);
+    this.configurePanel(this.panel);
+    await this.reloadTranscriptions();
+    this.postStateToWebview();
+  }
+
+  async restore(webviewPanel: vscode.WebviewPanel): Promise<void> {
+    this.panel = webviewPanel;
+    this.configurePanel(webviewPanel);
+    await this.reloadTranscriptions();
+    this.postStateToWebview();
+  }
+
+  private async reloadTranscriptions(): Promise<void> {
+    this.transcriptions = await this.fileSystemService.loadTranscriptions();
+  }
+
+  private configurePanel(webviewPanel: vscode.WebviewPanel): void {
+    webviewPanel.webview.options = {
+      enableScripts: true
+    };
+    webviewPanel.webview.html = this.getWebviewHtml(webviewPanel.webview);
     this.disposables.push(
-      this.panel.webview.onDidReceiveMessage((message: WebviewMessage) => {
+      webviewPanel.webview.onDidReceiveMessage((message: WebviewMessage) => {
         void this.handleWebviewMessage(message);
       }),
-      this.panel.onDidDispose(() => {
-        this.panel = undefined;
+      webviewPanel.onDidDispose(() => {
+        if (this.panel === webviewPanel) {
+          this.panel = undefined;
+        }
       })
     );
-
-    this.postStateToWebview();
   }
 
   dispose(): void {
@@ -71,6 +93,10 @@ export class TranscriptionPanelController implements vscode.Disposable {
 
   private async handleWebviewMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
+      case 'webviewReady':
+        this.postStateToWebview();
+        return;
+
       case 'startTranscription':
         await this.startTranscription();
         return;
@@ -569,6 +595,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
     }
 
     render();
+    vscode.postMessage({ type: 'webviewReady' });
   </script>
 </body>
 </html>`;
