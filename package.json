@@ -12,14 +12,14 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:vscode-whisper-lite.startTranscription"
+    "onCommand:vscode-whisper-lite.openTranscriptions"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "vscode-whisper-lite.startTranscription",
-        "title": "Whisper Lite: Start Transcription"
+        "command": "vscode-whisper-lite.openTranscriptions",
+        "title": "Whisper Lite: Open Transcriptions"
       }
     ]
   },

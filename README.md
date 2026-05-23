@@ -2,7 +2,7 @@
 
 VS Code Whisper Lite is the starting point for a VS Code extension that will eventually use Whisper.cpp to transcribe speech recordings into text.
 
-This first version intentionally does not include Whisper.cpp integration yet. It only provides a working VS Code extension scaffold with a placeholder command.
+This first version intentionally does not include Whisper.cpp integration yet. It provides a working VS Code extension UI with mock transcriptions.
 
 ## Requirements
 
@@ -41,10 +41,24 @@ VS Code will open a new Extension Development Host window with this extension lo
 In the Extension Development Host window:
 
 1. Open the Command Palette with `Cmd+Shift+P`.
-2. Search for `Whisper Lite: Start Transcription`.
+2. Search for `Whisper Lite: Open Transcriptions`.
 3. Run the command.
+4. Click `Start transcription` in the Whisper Lite panel.
+5. Click `Stop transcription` to stop the current mock transcription.
 
-For now, the command shows a placeholder message confirming that the extension is active. The real Whisper.cpp transcription workflow will be added later.
+For now, each mock transcription writes `second 1`, `second 2`, `second 3`, and so on once per second. While a mock transcription is running, the panel shows `Transcription in progress` below the title. Each transcription row has icon buttons for copying its text to the clipboard and deleting it.
+
+## Saved Transcriptions
+
+Transcriptions are saved as JSON in VS Code's extension global storage directory. This keeps generated extension data outside the source repository while still persisting it between local VS Code sessions.
+
+The file is named:
+
+```text
+transcriptions.json
+```
+
+It is created under the extension-specific `globalStorageUri` managed by VS Code.
 
 ## Development Workflow
 
