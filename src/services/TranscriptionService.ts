@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import * as vscode from 'vscode';
 import { TemporaryAudioFile } from './AudioService';
+import { DownloadModelService } from './DownloadModelService';
 
 export type WhisperSegment = {
   text: string;
@@ -55,7 +56,10 @@ export interface TranscriptionService {
 export class WhisperCliTranscriptionService implements TranscriptionService {
   private whisperProcess: ChildProcessWithoutNullStreams | undefined;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly downloadModelService: DownloadModelService
+  ) {}
 
   async transcribeAudio(
     audioFile: TemporaryAudioFile,
@@ -100,8 +104,8 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
     this.cancelTranscription();
   }
 
-  private runWhisperCli(audioPath: string, outputBasePath: string): Promise<void> {
-    const whisperRuntime = getWhisperRuntimePaths(this.context);
+  private async runWhisperCli(audioPath: string, outputBasePath: string): Promise<void> {
+    const whisperRuntime = await getWhisperRuntimePaths(this.context, this.downloadModelService);
     const args = [
       '--model',
       whisperRuntime.modelPath,
@@ -139,12 +143,15 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
   }
 }
 
-function getWhisperRuntimePaths(context: vscode.ExtensionContext): WhisperRuntimePaths {
+async function getWhisperRuntimePaths(
+  context: vscode.ExtensionContext,
+  downloadModelService: DownloadModelService
+): Promise<WhisperRuntimePaths> {
   const runtimeRoot = path.join(context.extensionPath, 'vendor', 'whisper');
 
   return {
     cliPath: path.join(runtimeRoot, 'bin', 'whisper-cli'),
-    modelPath: path.join(runtimeRoot, 'models', 'ggml-medium.en.bin'),
+    modelPath: await downloadModelService.getSelectedModelPath(),
     vadModelPath: path.join(runtimeRoot, 'models', 'ggml-silero-v6.2.0.bin')
   };
 }

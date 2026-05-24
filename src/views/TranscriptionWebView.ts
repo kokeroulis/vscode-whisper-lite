@@ -133,6 +133,111 @@ export class TranscriptionWebView {
       margin-top: 18px;
     }
 
+    .models {
+      display: grid;
+      gap: 10px;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .model-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .model {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-soft);
+    }
+
+    .model-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .model-description {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .model-meta {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .model-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .secondary-button {
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .secondary-button:hover {
+      background: var(--vscode-toolbar-hoverBackground);
+    }
+
+    .secondary-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    .progress {
+      width: min(180px, 100%);
+      height: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: var(--border);
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 120ms ease;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 18px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
     .empty-state {
       padding: 28px 0;
       color: var(--muted);
@@ -225,7 +330,12 @@ export class TranscriptionWebView {
         grid-template-columns: 1fr;
       }
 
-      .actions {
+      .model {
+        grid-template-columns: 1fr;
+      }
+
+      .actions,
+      .model-actions {
         justify-content: flex-end;
       }
     }
@@ -240,6 +350,10 @@ export class TranscriptionWebView {
       </div>
       <button class="primary-button" type="button" id="transcriptionToggle" data-testid="transcription-toggle">Start transcription</button>
     </section>
+    <section class="models" aria-label="Whisper models">
+      <h2 class="section-title">Models</h2>
+      <div class="model-list" id="modelList" data-testid="model-list"></div>
+    </section>
     <section class="list" id="transcriptionList" aria-label="Active transcriptions" data-testid="transcription-list"></section>
   </main>
 
@@ -248,9 +362,11 @@ export class TranscriptionWebView {
     const transcriptionToggle = document.getElementById('transcriptionToggle');
     const statusLabel = document.getElementById('statusLabel');
     const transcriptionList = document.getElementById('transcriptionList');
+    const modelList = document.getElementById('modelList');
     let transcriptions = [];
     let workflowState = 'idle';
     let isUiBlocked = false;
+    let modelCatalog = { models: [], selectedModelId: 'medium.en' };
 
     transcriptionToggle.addEventListener('click', () => {
       vscode.postMessage({
@@ -266,7 +382,21 @@ export class TranscriptionWebView {
       transcriptions = event.data.transcriptions;
       workflowState = event.data.workflowState;
       isUiBlocked = Boolean(event.data.isUiBlocked);
+      modelCatalog = event.data.modelCatalog || modelCatalog;
       render();
+    });
+
+    modelList.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-action]');
+
+      if (!button) {
+        return;
+      }
+
+      vscode.postMessage({
+        type: button.dataset.action,
+        modelId: button.dataset.modelId
+      });
     });
 
     transcriptionList.addEventListener('click', (event) => {
@@ -287,6 +417,7 @@ export class TranscriptionWebView {
       transcriptionToggle.classList.toggle('running', workflowState === 'recording');
       transcriptionToggle.classList.toggle('cancel', workflowState === 'translating');
       statusLabel.textContent = getStatusLabel();
+      renderModels();
 
       if (transcriptions.length === 0) {
         transcriptionList.innerHTML = '<p class="empty-state">No active transcriptions yet.</p>';
@@ -296,6 +427,92 @@ export class TranscriptionWebView {
       transcriptionList.replaceChildren(
         ...transcriptions.map((transcription) => createTranscriptionItem(transcription))
       );
+    }
+
+    function renderModels() {
+      if (modelCatalog.models.length === 0) {
+        modelList.innerHTML = '<p class="empty-state">No models configured.</p>';
+        return;
+      }
+
+      modelList.replaceChildren(...modelCatalog.models.map((model) => createModelItem(model)));
+    }
+
+    function createModelItem(model) {
+      const item = document.createElement('article');
+      item.className = 'model';
+
+      const body = document.createElement('div');
+      const name = document.createElement('p');
+      const description = document.createElement('p');
+      const meta = document.createElement('div');
+
+      name.className = 'model-name';
+      name.textContent = model.name;
+      if (model.selected) {
+        const selectedPill = document.createElement('span');
+        selectedPill.className = 'pill';
+        selectedPill.textContent = 'Selected';
+        name.append(selectedPill);
+      }
+
+      description.className = 'model-description';
+      description.textContent = model.description;
+      meta.className = 'model-meta';
+      meta.textContent = getModelMeta(model);
+      body.append(name, description, meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'model-actions';
+
+      if (model.status === 'downloading') {
+        actions.append(createProgress(model));
+      } else if (!model.installed) {
+        actions.append(createModelButton('downloadModel', model.id, 'Download'));
+      } else if (!model.selected) {
+        actions.append(createModelButton('selectModel', model.id, 'Use model'));
+      }
+
+      item.append(body, actions);
+      return item;
+    }
+
+    function getModelMeta(model) {
+      if (model.status === 'downloading') {
+        return model.progress?.percent
+          ? \`Downloading \${model.progress.percent}%\`
+          : 'Downloading';
+      }
+
+      if (model.installed) {
+        return \`\${model.sizeLabel} · Downloaded\`;
+      }
+
+      return \`\${model.sizeLabel} · Not downloaded\`;
+    }
+
+    function createModelButton(action, modelId, label) {
+      const button = document.createElement('button');
+      button.className = 'secondary-button';
+      button.type = 'button';
+      button.dataset.action = action;
+      button.dataset.modelId = modelId;
+      button.disabled = isUiBlocked;
+      button.textContent = label;
+      return button;
+    }
+
+    function createProgress(model) {
+      const progress = document.createElement('div');
+      const progressBar = document.createElement('div');
+      const percent = model.progress?.percent || 0;
+
+      progress.className = 'progress';
+      progress.setAttribute('aria-label', \`\${model.name} download progress\`);
+      progressBar.className = 'progress-bar';
+      progressBar.style.width = \`\${percent}%\`;
+      progress.append(progressBar);
+      return progress;
     }
 
     function createTranscriptionItem(transcription) {

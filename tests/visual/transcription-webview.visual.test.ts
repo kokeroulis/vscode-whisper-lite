@@ -30,18 +30,20 @@ test('transcription webview idle list layout', async ({ page }) => {
     cspSource: "'self'",
     nonce: 'visual-test-nonce'
   });
+  const testHtml = html.replace(
+    '<script nonce="visual-test-nonce">',
+    `<script nonce="visual-test-nonce">
+      window.vscodeMessages = [];
+      window.acquireVsCodeApi = () => ({
+        postMessage: (message) => {
+          window.vscodeMessages.push(message);
+        }
+      });
+    </script>
+    <script nonce="visual-test-nonce">`
+  );
 
-  await page.addInitScript((): void => {
-    const visualWindow = window as unknown as VisualWindow;
-
-    visualWindow.vscodeMessages = [];
-    visualWindow.acquireVsCodeApi = (): VsCodeApi => ({
-      postMessage: (message: unknown): void => {
-        visualWindow.vscodeMessages.push(message);
-      }
-    });
-  });
-  await page.setContent(html);
+  await page.setContent(testHtml);
   await page.addStyleTag({
     content: `
       :root {
@@ -58,21 +60,46 @@ test('transcription webview idle list layout', async ({ page }) => {
         --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --vscode-font-size: 13px;
         --vscode-toolbar-hoverBackground: rgba(177, 186, 196, 0.12);
+        --vscode-badge-background: #2f81f7;
+        --vscode-badge-foreground: #ffffff;
       }
     `
   });
   await page.evaluate((state: Transcription[]): void => {
-    window.dispatchEvent(
+    const visualWindow = window as unknown as VisualWindow;
+
+    visualWindow.dispatchEvent(
       new MessageEvent('message', {
         data: {
           type: 'state',
           transcriptions: state,
           workflowState: 'idle',
-          isUiBlocked: false
+          isUiBlocked: false,
+          modelCatalog: {
+            selectedModelId: 'medium.en',
+            models: [
+              {
+                id: 'medium.en',
+                name: 'Medium English',
+                description: 'English-only Whisper medium model.',
+                fileName: 'ggml-medium.en.bin',
+                downloadUrl: 'https://example.com/ggml-medium.en.bin',
+                sizeLabel: 'Medium',
+                installed: true,
+                selected: true,
+                localPath: '/models/ggml-medium.en.bin',
+                status: 'downloaded'
+              }
+            ]
+          }
         }
       })
     );
   }, transcriptions);
 
+  await expect(page.getByText('Medium English')).toBeVisible();
+  await expect(page.getByText('Downloaded')).toBeVisible();
+  await expect(page.getByText('This is the first captured transcription')).toBeVisible();
+  await expect(page.getByText('A second transcription keeps')).toBeVisible();
   await expect(page).toHaveScreenshot('transcription-webview-idle-list.png');
 });

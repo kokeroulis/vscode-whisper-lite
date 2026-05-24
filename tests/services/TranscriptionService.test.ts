@@ -4,6 +4,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TemporaryAudioFile } from '../../src/services/AudioService';
+import {
+  DownloadModelService,
+  ModelCatalogState,
+  ModelDownloadProgress,
+  WhisperModelId
+} from '../../src/services/DownloadModelService';
 import { WhisperCliTranscriptionService } from '../../src/services/TranscriptionService';
 import { createMockChildProcess } from '../helpers/mockChildProcess';
 import { createExtensionContext } from '../helpers/vscodeContext';
@@ -11,6 +17,30 @@ import { createExtensionContext } from '../helpers/vscodeContext';
 vi.mock('node:child_process', () => ({
   spawn: vi.fn()
 }));
+
+class FakeDownloadModelService implements DownloadModelService {
+  getModelCatalogState(): Promise<ModelCatalogState> {
+    return Promise.resolve({
+      selectedModelId: 'medium.en',
+      models: []
+    });
+  }
+
+  downloadModel(
+    _modelId: WhisperModelId,
+    _onProgress: (progress: ModelDownloadProgress) => void
+  ): Promise<ModelCatalogState> {
+    return this.getModelCatalogState();
+  }
+
+  selectModel(_modelId: WhisperModelId): Promise<ModelCatalogState> {
+    return this.getModelCatalogState();
+  }
+
+  getSelectedModelPath(): Promise<string> {
+    return Promise.resolve('/downloaded-models/ggml-medium.en.bin');
+  }
+}
 
 describe('WhisperCliTranscriptionService', () => {
   const tempRoots: string[] = [];
@@ -36,7 +66,10 @@ describe('WhisperCliTranscriptionService', () => {
         path: audioPath,
         mimeType: 'audio/wav'
       },
-      service: new WhisperCliTranscriptionService(createExtensionContext('/extension-root')),
+      service: new WhisperCliTranscriptionService(
+        createExtensionContext('/extension-root'),
+        new FakeDownloadModelService()
+      ),
       tempRoot
     };
   }
@@ -46,6 +79,11 @@ describe('WhisperCliTranscriptionService', () => {
     vi.mocked(spawn).mockReturnValue(mockProcess);
     const { audioFile, service } = await createFixture();
     const transcriptionPromise = service.transcribeAudio(audioFile, 100, 200);
+
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalled();
+    });
+
     const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1] as string[];
     const outputFileIndex = spawnArgs.indexOf('--output-file');
     const outputBasePath = spawnArgs[outputFileIndex + 1];
@@ -80,7 +118,7 @@ describe('WhisperCliTranscriptionService', () => {
     });
     expect(spawn).toHaveBeenCalledWith('/extension-root/vendor/whisper/bin/whisper-cli', [
       '--model',
-      '/extension-root/vendor/whisper/models/ggml-medium.en.bin',
+      '/downloaded-models/ggml-medium.en.bin',
       '--vad',
       '--vad-model',
       '/extension-root/vendor/whisper/models/ggml-silero-v6.2.0.bin',
@@ -99,6 +137,11 @@ describe('WhisperCliTranscriptionService', () => {
     vi.mocked(spawn).mockReturnValue(mockProcess);
     const { audioFile, service } = await createFixture();
     const transcriptionPromise = service.transcribeAudio(audioFile, 100, 200);
+
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalled();
+    });
+
     const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1] as string[];
     const outputFileIndex = spawnArgs.indexOf('--output-file');
     const outputBasePath = spawnArgs[outputFileIndex + 1];
@@ -116,6 +159,11 @@ describe('WhisperCliTranscriptionService', () => {
     vi.mocked(spawn).mockReturnValue(mockProcess);
     const { audioFile, service } = await createFixture();
     const transcriptionPromise = service.transcribeAudio(audioFile, 100, 200);
+
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalled();
+    });
+
     const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1] as string[];
     const outputFileIndex = spawnArgs.indexOf('--output-file');
     const outputBasePath = spawnArgs[outputFileIndex + 1];

@@ -1,5 +1,11 @@
 import * as vscode from 'vscode';
 import { AudioService } from '../services/AudioService';
+import {
+  DownloadModelService,
+  ModelCatalogState,
+  ModelDownloadProgress,
+  WhisperModelId
+} from '../services/DownloadModelService';
 import { FileSystemService } from '../services/FileSystemService';
 import { Transcription, TranscriptionService } from '../services/TranscriptionService';
 import { TranscriptionWebView } from '../views/TranscriptionWebView';
@@ -10,7 +16,9 @@ type WebviewMessage =
   | { type: 'stopTranscription' }
   | { type: 'cancelTranscription' }
   | { type: 'copyTranscription'; id: string }
-  | { type: 'deleteTranscription'; id: string };
+  | { type: 'deleteTranscription'; id: string }
+  | { type: 'downloadModel'; modelId: WhisperModelId }
+  | { type: 'selectModel'; modelId: WhisperModelId };
 
 export class TranscriptionPanelController implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
@@ -23,6 +31,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
     private readonly audioService: AudioService,
     private readonly transcriptionService: TranscriptionService,
     private readonly fileSystemService: FileSystemService,
+    private readonly downloadModelService: DownloadModelService,
     private readonly transcriptionWebView: TranscriptionWebView = new TranscriptionWebView()
   ) {}
 
@@ -35,7 +44,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
     if (this.panel) {
       this.panel.reveal(vscode.ViewColumn.One);
       await this.reloadTranscriptions();
-      this.postStateToWebview();
+      await this.postStateToWebview();
       return;
     }
 
@@ -51,14 +60,14 @@ export class TranscriptionPanelController implements vscode.Disposable {
 
     this.configurePanel(this.panel);
     await this.reloadTranscriptions();
-    this.postStateToWebview();
+    await this.postStateToWebview();
   }
 
   async restore(webviewPanel: vscode.WebviewPanel): Promise<void> {
     this.panel = webviewPanel;
     this.configurePanel(webviewPanel);
     await this.reloadTranscriptions();
-    this.postStateToWebview();
+    await this.postStateToWebview();
   }
 
   private async reloadTranscriptions(): Promise<void> {
@@ -96,7 +105,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
   private async handleWebviewMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
       case 'webviewReady':
-        this.postStateToWebview();
+        await this.postStateToWebview();
         return;
 
       case 'startTranscription':
@@ -118,6 +127,14 @@ export class TranscriptionPanelController implements vscode.Disposable {
       case 'deleteTranscription':
         await this.deleteTranscription(message.id);
         return;
+
+      case 'downloadModel':
+        await this.downloadModel(message.modelId);
+        return;
+
+      case 'selectModel':
+        await this.selectModel(message.modelId);
+        return;
     }
   }
 
@@ -127,10 +144,10 @@ export class TranscriptionPanelController implements vscode.Disposable {
     try {
       await this.audioService.startRecording(temporaryAudioFile);
       this.recordingStartedAt = Date.now();
-      this.postStateToWebview();
+      await this.postStateToWebview();
     } catch (error) {
       await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
-      this.postStateToWebview();
+      await this.postStateToWebview();
       await vscode.window.showErrorMessage(
         `Could not start microphone recording: ${getErrorMessage(error)}`
       );
@@ -142,18 +159,18 @@ export class TranscriptionPanelController implements vscode.Disposable {
     const startedAt = this.recordingStartedAt ?? stopStartedAt;
     const audioFilePromise = this.audioService.stopRecording();
 
-    this.postStateToWebview();
+    await this.postStateToWebview();
 
     const temporaryAudioFile = await audioFilePromise;
 
     if (!temporaryAudioFile) {
-      this.postStateToWebview();
+      await this.postStateToWebview();
       return;
     }
 
     try {
       this.audioService.markTranslating();
-      this.postStateToWebview();
+      await this.postStateToWebview();
 
       const transcription = await this.transcriptionService.transcribeAudio(
         temporaryAudioFile,
@@ -167,7 +184,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
       this.recordingStartedAt = undefined;
       this.audioService.markIdle();
       await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
-      this.postStateToWebview();
+      await this.postStateToWebview();
     }
   }
 
@@ -176,7 +193,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
     this.transcriptionService.cancelTranscription();
     this.audioService.markIdle();
     this.recordingStartedAt = undefined;
-    this.postStateToWebview();
+    void this.postStateToWebview();
   }
 
   private async copyTranscription(id: string): Promise<void> {
@@ -206,20 +223,79 @@ export class TranscriptionPanelController implements vscode.Disposable {
 
   private async saveAndRender(): Promise<void> {
     await this.fileSystemService.saveTranscriptions(this.transcriptions);
-    this.postStateToWebview();
+    await this.postStateToWebview();
   }
 
-  private postStateToWebview(): void {
+  private async downloadModel(modelId: WhisperModelId): Promise<void> {
+    if (this.isUiBlocked()) {
+      return;
+    }
+
+    try {
+      await this.downloadModelService.downloadModel(
+        modelId,
+        (progress: ModelDownloadProgress): void => {
+          void this.postStateToWebview(progress);
+        }
+      );
+      await this.postStateToWebview();
+    } catch (error) {
+      await this.postStateToWebview();
+      await vscode.window.showErrorMessage(`Could not download model: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private async selectModel(modelId: WhisperModelId): Promise<void> {
+    if (this.isUiBlocked()) {
+      return;
+    }
+
+    try {
+      await this.downloadModelService.selectModel(modelId);
+      await this.postStateToWebview();
+    } catch (error) {
+      await vscode.window.showWarningMessage(getErrorMessage(error));
+      await this.postStateToWebview();
+    }
+  }
+
+  private async postStateToWebview(progress?: ModelDownloadProgress): Promise<void> {
     if (!this.panel) {
       return;
     }
+
+    const modelCatalog = await this.getModelCatalogState(progress);
 
     void this.panel.webview.postMessage({
       type: 'state',
       transcriptions: this.transcriptions,
       workflowState: this.audioService.getWorkflowState(),
-      isUiBlocked: this.isUiBlocked()
+      isUiBlocked: this.isUiBlocked(),
+      modelCatalog
     });
+  }
+
+  private async getModelCatalogState(
+    progress?: ModelDownloadProgress
+  ): Promise<ModelCatalogState> {
+    const modelCatalog = await this.downloadModelService.getModelCatalogState();
+
+    if (!progress) {
+      return modelCatalog;
+    }
+
+    return {
+      ...modelCatalog,
+      models: modelCatalog.models.map((model) =>
+        model.id === progress.modelId
+          ? {
+              ...model,
+              status: 'downloading',
+              progress
+            }
+          : model
+      )
+    };
   }
 
   private isUiBlocked(): boolean {

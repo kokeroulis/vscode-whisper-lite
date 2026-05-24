@@ -88,11 +88,18 @@ vendor/whisper/
   bin/
     whisper-cli
   models/
-    ggml-medium.en.bin
     ggml-silero-v6.2.0.bin
 ```
 
-The English-only medium Whisper model is used for transcription. Whisper.cpp model names ending in `.en` are English-only; models without that suffix are multilingual. The Silero model is for voice activity detection, which helps skip silence or background-only audio before transcription.
+The Silero model is small enough to bundle with the extension and is used for voice activity detection, which helps skip silence or background-only audio before transcription.
+
+The English-only medium Whisper model is too large to bundle. The extension downloads it from the GitHub release asset configured in `DownloadModelService` and stores it in VS Code's extension global storage directory:
+
+```text
+<globalStorageUri>/models/ggml-medium.en.bin
+```
+
+Open the Whisper Lite webview and use the `Models` section to download the model, see download progress, and choose which downloaded model should be used for transcription. For now, only `Medium English` is listed; the service and UI are structured so more models can be added later.
 
 ## Development Workflow
 
@@ -110,6 +117,12 @@ Run the service and controller functional tests with Vitest:
 
 ```sh
 npm run test
+```
+
+Run only service unit tests:
+
+```sh
+npm run test:unit
 ```
 
 Run the real VS Code Extension Development Host smoke test with `@vscode/test-electron`:

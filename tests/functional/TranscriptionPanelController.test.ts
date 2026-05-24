@@ -6,6 +6,12 @@ import {
   TemporaryAudioFile,
   TranscriptionWorkflowState
 } from '../../src/services/AudioService';
+import {
+  DownloadModelService,
+  ModelCatalogState,
+  ModelDownloadProgress,
+  WhisperModelId
+} from '../../src/services/DownloadModelService';
 import { FileSystemService } from '../../src/services/FileSystemService';
 import { Transcription, TranscriptionService } from '../../src/services/TranscriptionService';
 import { TranscriptionWebView } from '../../src/views/TranscriptionWebView';
@@ -18,13 +24,16 @@ type WebviewMessage =
   | { type: 'stopTranscription' }
   | { type: 'cancelTranscription' }
   | { type: 'copyTranscription'; id: string }
-  | { type: 'deleteTranscription'; id: string };
+  | { type: 'deleteTranscription'; id: string }
+  | { type: 'downloadModel'; modelId: WhisperModelId }
+  | { type: 'selectModel'; modelId: WhisperModelId };
 
 type StateMessage = {
   type: 'state';
   transcriptions: Transcription[];
   workflowState: TranscriptionWorkflowState;
   isUiBlocked: boolean;
+  modelCatalog: ModelCatalogState;
 };
 
 type MutableVscodeWindow = {
@@ -176,9 +185,73 @@ class FakeFileSystemService implements FileSystemService {
   }
 }
 
+class FakeDownloadModelService implements DownloadModelService {
+  private modelCatalog: ModelCatalogState = {
+    selectedModelId: 'medium.en',
+    models: [
+      {
+        id: 'medium.en',
+        name: 'Medium English',
+        description: 'English-only Whisper medium model.',
+        fileName: 'ggml-medium.en.bin',
+        downloadUrl: 'https://example.com/ggml-medium.en.bin',
+        sizeLabel: 'Medium',
+        installed: false,
+        selected: true,
+        localPath: '/models/ggml-medium.en.bin',
+        status: 'notDownloaded'
+      }
+    ]
+  };
+  readonly selectModel: DownloadModelService['selectModel'] = vi.fn(
+    (modelId: WhisperModelId): Promise<ModelCatalogState> => {
+      this.modelCatalog = {
+        selectedModelId: modelId,
+        models: this.modelCatalog.models.map((model) => ({
+          ...model,
+          selected: model.id === modelId
+        }))
+      };
+
+      return Promise.resolve(this.modelCatalog);
+    }
+  );
+  readonly getSelectedModelPath: DownloadModelService['getSelectedModelPath'] = vi.fn(
+    (): Promise<string> => Promise.resolve('/models/ggml-medium.en.bin')
+  );
+
+  getModelCatalogState(): Promise<ModelCatalogState> {
+    return Promise.resolve(this.modelCatalog);
+  }
+
+  downloadModel(
+    modelId: WhisperModelId,
+    onProgress: (progress: ModelDownloadProgress) => void
+  ): Promise<ModelCatalogState> {
+    onProgress({
+      modelId,
+      downloadedBytes: 50,
+      totalBytes: 100,
+      percent: 50
+    });
+    this.modelCatalog = {
+      selectedModelId: modelId,
+      models: this.modelCatalog.models.map((model) => ({
+        ...model,
+        installed: model.id === modelId ? true : model.installed,
+        selected: model.id === modelId,
+        status: model.id === modelId ? 'downloaded' : model.status
+      }))
+    };
+
+    return Promise.resolve(this.modelCatalog);
+  }
+}
+
 type ControllerFixture = {
   audioService: FakeAudioService;
   controller: TranscriptionPanelController;
+  downloadModelService: FakeDownloadModelService;
   fileSystemService: FakeFileSystemService;
   panel: FakeWebviewPanel;
   transcriptionService: FakeTranscriptionService;
@@ -194,6 +267,7 @@ describe('TranscriptionPanelController functional flow', () => {
     const audioService = new FakeAudioService();
     const transcriptionService = new FakeTranscriptionService();
     const fileSystemService = new FakeFileSystemService(savedTranscriptions);
+    const downloadModelService = new FakeDownloadModelService();
 
     (vscodeMock.window as unknown as MutableVscodeWindow).createWebviewPanel = (): vscode.WebviewPanel =>
       panel as unknown as vscode.WebviewPanel;
@@ -205,8 +279,10 @@ describe('TranscriptionPanelController functional flow', () => {
         audioService,
         transcriptionService,
         fileSystemService,
+        downloadModelService,
         new TranscriptionWebView()
       ),
+      downloadModelService,
       fileSystemService,
       panel,
       transcriptionService
@@ -226,12 +302,14 @@ describe('TranscriptionPanelController functional flow', () => {
     await flushPromises();
 
     expect(panel.webview.html).toContain('Whisper Lite');
-    expect(panel.webview.postedMessages).toContainEqual<StateMessage>({
-      type: 'state',
-      transcriptions: [savedTranscription],
-      workflowState: 'idle',
-      isUiBlocked: false
-    });
+    expect(panel.webview.postedMessages).toContainEqual(
+      expect.objectContaining({
+        type: 'state',
+        transcriptions: [savedTranscription],
+        workflowState: 'idle',
+        isUiBlocked: false
+      })
+    );
   });
 
   it('records, transcribes, persists the result, and returns the UI to idle', async () => {
@@ -297,6 +375,29 @@ describe('TranscriptionPanelController functional flow', () => {
       transcriptions: []
     });
   });
+
+  it('downloads a model and posts progress updates to the webview', async () => {
+    const { controller, panel } = createFixture();
+
+    await controller.open();
+    panel.webview.emitMessage({ type: 'downloadModel', modelId: 'medium.en' });
+    await flushPromises();
+
+    const progressState = stateMessages(panel).find((message: StateMessage): boolean => {
+      const model = message.modelCatalog.models[0];
+
+      return model?.status === 'downloading';
+    });
+    const finalModel = lastStateMessage(panel)?.modelCatalog.models[0];
+
+    expect(progressState?.modelCatalog.models[0]?.progress?.percent).toBe(50);
+    expect(finalModel).toMatchObject({
+      id: 'medium.en',
+      installed: true,
+      selected: true,
+      status: 'downloaded'
+    });
+  });
 });
 
 async function flushPromises(): Promise<void> {
@@ -305,9 +406,11 @@ async function flushPromises(): Promise<void> {
 }
 
 function lastStateMessage(panel: FakeWebviewPanel): StateMessage | undefined {
-  const stateMessages = panel.webview.postedMessages.filter(isStateMessage);
+  return stateMessages(panel).at(-1);
+}
 
-  return stateMessages.at(-1);
+function stateMessages(panel: FakeWebviewPanel): StateMessage[] {
+  return panel.webview.postedMessages.filter(isStateMessage);
 }
 
 function isStateMessage(message: unknown): message is StateMessage {
