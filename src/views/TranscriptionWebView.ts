@@ -188,6 +188,7 @@ export class TranscriptionWebView {
       gap: 8px;
       align-items: center;
       justify-content: flex-end;
+      min-width: 180px;
     }
 
     .secondary-button {
@@ -212,7 +213,7 @@ export class TranscriptionWebView {
     }
 
     .progress {
-      width: min(180px, 100%);
+      width: 180px;
       height: 6px;
       overflow: hidden;
       border-radius: 999px;
@@ -337,6 +338,11 @@ export class TranscriptionWebView {
       .actions,
       .model-actions {
         justify-content: flex-end;
+      }
+
+      .model-actions,
+      .progress {
+        width: 100%;
       }
     }
   </style>

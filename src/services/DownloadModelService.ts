@@ -57,6 +57,7 @@ export interface DownloadModelService {
 }
 
 const modelSettingsFileName = 'model-settings.json';
+const mediumEnglishModelUrlOverrideEnv = 'VSCODE_WHISPER_LITE_MEDIUM_EN_MODEL_URL';
 
 export const whisperModels: WhisperModel[] = [
   {
@@ -79,7 +80,7 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
   async getModelCatalogState(): Promise<ModelCatalogState> {
     const selectedModelId = await this.getSelectedModelId();
     const models = await Promise.all(
-      whisperModels.map(async (model: WhisperModel): Promise<WhisperModelState> => {
+      getAvailableModels().map(async (model: WhisperModel): Promise<WhisperModelState> => {
         const localPath = this.getModelPath(model);
         const installed = await fileExists(localPath);
         const isDownloading = this.downloadingModelId === model.id;
@@ -199,7 +200,9 @@ function getModelStatus(installed: boolean, isDownloading: boolean): ModelDownlo
 }
 
 function getModel(modelId: WhisperModelId): WhisperModel {
-  const model = whisperModels.find((candidate: WhisperModel): boolean => candidate.id === modelId);
+  const model = getAvailableModels().find(
+    (candidate: WhisperModel): boolean => candidate.id === modelId
+  );
 
   if (!model) {
     throw new Error(`Unknown Whisper model: ${modelId}`);
@@ -209,7 +212,26 @@ function getModel(modelId: WhisperModelId): WhisperModel {
 }
 
 function isWhisperModelId(value: unknown): value is WhisperModelId {
-  return whisperModels.some((model: WhisperModel): boolean => model.id === value);
+  return getAvailableModels().some((model: WhisperModel): boolean => model.id === value);
+}
+
+function getAvailableModels(): WhisperModel[] {
+  const mediumEnglishDownloadUrl = process.env[mediumEnglishModelUrlOverrideEnv];
+
+  if (!mediumEnglishDownloadUrl) {
+    return whisperModels;
+  }
+
+  return whisperModels.map((model: WhisperModel): WhisperModel => {
+    if (model.id !== 'medium.en') {
+      return model;
+    }
+
+    return {
+      ...model,
+      downloadUrl: mediumEnglishDownloadUrl
+    };
+  });
 }
 
 function downloadFile(

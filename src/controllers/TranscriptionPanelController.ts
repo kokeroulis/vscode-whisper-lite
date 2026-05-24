@@ -10,7 +10,7 @@ import { FileSystemService } from '../services/FileSystemService';
 import { Transcription, TranscriptionService } from '../services/TranscriptionService';
 import { TranscriptionWebView } from '../views/TranscriptionWebView';
 
-type WebviewMessage =
+export type WebviewMessage =
   | { type: 'webviewReady' }
   | { type: 'startTranscription' }
   | { type: 'stopTranscription' }
@@ -19,6 +19,14 @@ type WebviewMessage =
   | { type: 'deleteTranscription'; id: string }
   | { type: 'downloadModel'; modelId: WhisperModelId }
   | { type: 'selectModel'; modelId: WhisperModelId };
+
+export type TranscriptionPanelState = {
+  type: 'state';
+  transcriptions: Transcription[];
+  workflowState: ReturnType<AudioService['getWorkflowState']>;
+  isUiBlocked: boolean;
+  modelCatalog: ModelCatalogState;
+};
 
 export class TranscriptionPanelController implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
@@ -100,6 +108,14 @@ export class TranscriptionPanelController implements vscode.Disposable {
     }
 
     this.disposables.length = 0;
+  }
+
+  async handleTestMessage(message: WebviewMessage): Promise<void> {
+    await this.handleWebviewMessage(message);
+  }
+
+  async getStateForTesting(): Promise<TranscriptionPanelState> {
+    return this.createState();
   }
 
   private async handleWebviewMessage(message: WebviewMessage): Promise<void> {
@@ -264,37 +280,31 @@ export class TranscriptionPanelController implements vscode.Disposable {
       return;
     }
 
-    const modelCatalog = await this.getModelCatalogState(progress);
+    void this.panel.webview.postMessage(await this.createState(progress));
+  }
 
-    void this.panel.webview.postMessage({
+  private async createState(progress?: ModelDownloadProgress): Promise<TranscriptionPanelState> {
+    const modelCatalog = await this.downloadModelService.getModelCatalogState();
+
+    return {
       type: 'state',
       transcriptions: this.transcriptions,
       workflowState: this.audioService.getWorkflowState(),
       isUiBlocked: this.isUiBlocked(),
-      modelCatalog
-    });
-  }
-
-  private async getModelCatalogState(
-    progress?: ModelDownloadProgress
-  ): Promise<ModelCatalogState> {
-    const modelCatalog = await this.downloadModelService.getModelCatalogState();
-
-    if (!progress) {
-      return modelCatalog;
-    }
-
-    return {
-      ...modelCatalog,
-      models: modelCatalog.models.map((model) =>
-        model.id === progress.modelId
-          ? {
-              ...model,
-              status: 'downloading',
-              progress
-            }
-          : model
-      )
+      modelCatalog: progress
+        ? {
+            ...modelCatalog,
+            models: modelCatalog.models.map((model) =>
+              model.id === progress.modelId
+                ? {
+                    ...model,
+                    status: 'downloading',
+                    progress
+                  }
+                : model
+            )
+          }
+        : modelCatalog
     };
   }
 
