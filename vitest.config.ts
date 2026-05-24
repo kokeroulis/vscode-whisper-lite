@@ -10,7 +10,8 @@ export default defineConfig({
   test: {
     globals: false,
     include: [
-      'tests/**/*.test.ts'
+      'tests/functional/**/*.test.ts',
+      'tests/services/**/*.test.ts'
     ]
   }
 });

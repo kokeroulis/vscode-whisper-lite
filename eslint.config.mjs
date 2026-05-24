@@ -7,13 +7,16 @@ export default [
       'out/**',
       'node_modules/**',
       'vendor/**',
-      '.build/**'
+      '.build/**',
+      '.vscode-test/**',
+      'test-results/**'
     ]
   },
   {
     files: [
       'src/**/*.ts',
       'tests/**/*.ts',
+      'playwright.config.ts',
       'vitest.config.ts'
     ],
     languageOptions: {

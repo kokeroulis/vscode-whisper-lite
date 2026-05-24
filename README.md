@@ -104,6 +104,38 @@ npm run watch
 
 After changing extension code, reload the Extension Development Host window with `Cmd+R` to pick up the latest compiled output.
 
+## Tests
+
+Run the service and controller functional tests with Vitest:
+
+```sh
+npm run test
+```
+
+Run the real VS Code Extension Development Host smoke test with `@vscode/test-electron`:
+
+```sh
+npm run test:smoke
+```
+
+Run the Playwright visual regression tests for the extracted webview UI:
+
+```sh
+npm run test:visual
+```
+
+If Playwright has not installed a local browser yet, run:
+
+```sh
+npx playwright install chromium
+```
+
+When an intentional UI change updates the screenshot baseline:
+
+```sh
+npm run test:visual:update
+```
+
 ## Project Structure
 
 ```text
@@ -118,7 +150,14 @@ After changing extension code, reload the Extension Development Host window with
 │   │   ├── AudioService.ts
 │   │   ├── FileSystemService.ts
 │   │   └── TranscriptionService.ts
+│   ├── views/
+│   │   └── TranscriptionWebView.ts
 │   └── extension.ts
+├── tests/
+│   ├── functional/
+│   ├── services/
+│   ├── smoke/
+│   └── visual/
 ├── package.json
 ├── tsconfig.json
 └── README.md
