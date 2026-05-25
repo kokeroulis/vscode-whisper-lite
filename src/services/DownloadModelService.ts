@@ -59,6 +59,7 @@ export interface DownloadModelService {
 
 const modelSettingsFileName = 'model-settings.json';
 const mediumEnglishModelUrlOverrideEnv = 'VSCODE_WHISPER_LITE_MEDIUM_EN_MODEL_URL';
+const downloadProgressByteInterval = 1024 * 1024;
 
 export const whisperModels: WhisperModel[] = [
   {
@@ -76,6 +77,8 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
   private downloadingModelId: WhisperModelId | undefined;
   private latestProgress: ModelDownloadProgress | undefined;
   private latestLoggedDownloadPercent: number | undefined;
+  private latestNotifiedDownloadPercent: number | undefined;
+  private latestNotifiedDownloadedBytes: number | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -117,6 +120,8 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
 
     this.downloadingModelId = modelId;
     this.latestLoggedDownloadPercent = undefined;
+    this.latestNotifiedDownloadPercent = undefined;
+    this.latestNotifiedDownloadedBytes = undefined;
     this.latestProgress = {
       modelId,
       downloadedBytes: 0
@@ -131,7 +136,9 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
       await downloadFile(model, temporaryPath, (progress: ModelDownloadProgress): void => {
         this.latestProgress = progress;
         this.logDownloadProgress(model, progress);
-        onProgress(progress);
+        if (this.shouldNotifyDownloadProgress(progress)) {
+          onProgress(progress);
+        }
       });
       await fs.rename(temporaryPath, localPath);
       this.logger.info(`Downloaded ${model.name} to ${localPath}.`);
@@ -145,6 +152,8 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
       this.downloadingModelId = undefined;
       this.latestProgress = undefined;
       this.latestLoggedDownloadPercent = undefined;
+      this.latestNotifiedDownloadPercent = undefined;
+      this.latestNotifiedDownloadedBytes = undefined;
       await deleteIfExists(temporaryPath);
     }
   }
@@ -234,6 +243,43 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
       `Downloading ${model.name}: ${progress.percent}% (${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)}).`
     );
   }
+
+  private shouldNotifyDownloadProgress(progress: ModelDownloadProgress): boolean {
+    if (progress.percent === 100) {
+      if (this.latestNotifiedDownloadPercent === 100) {
+        return false;
+      }
+
+      this.latestNotifiedDownloadPercent = 100;
+      return true;
+    }
+
+    if (typeof progress.percent === 'number') {
+      if (progress.percent <= 0) {
+        return false;
+      }
+
+      if (
+        typeof this.latestNotifiedDownloadPercent === 'number' &&
+        progress.percent <= this.latestNotifiedDownloadPercent
+      ) {
+        return false;
+      }
+
+      this.latestNotifiedDownloadPercent = progress.percent;
+      return true;
+    }
+
+    if (
+      typeof this.latestNotifiedDownloadedBytes === 'number' &&
+      progress.downloadedBytes - this.latestNotifiedDownloadedBytes < downloadProgressByteInterval
+    ) {
+      return false;
+    }
+
+    this.latestNotifiedDownloadedBytes = progress.downloadedBytes;
+    return true;
+  }
 }
 
 function getModelStatus(installed: boolean, isDownloading: boolean): ModelDownloadStatus {
@@ -315,7 +361,7 @@ function downloadFile(
           modelId: model.id,
           downloadedBytes,
           totalBytes,
-          percent: totalBytes ? Math.round((downloadedBytes / totalBytes) * 100) : undefined
+          percent: calculateDownloadPercent(downloadedBytes, totalBytes)
         });
       });
 
@@ -348,6 +394,18 @@ function parseContentLength(value: string | string[] | undefined): number | unde
   const parsed = Number.parseInt(value, 10);
 
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function calculateDownloadPercent(downloadedBytes: number, totalBytes: number | undefined): number | undefined {
+  if (!totalBytes) {
+    return undefined;
+  }
+
+  if (downloadedBytes >= totalBytes) {
+    return 100;
+  }
+
+  return Math.floor((downloadedBytes / totalBytes) * 100);
 }
 
 function formatBytes(bytes: number | undefined): string {
