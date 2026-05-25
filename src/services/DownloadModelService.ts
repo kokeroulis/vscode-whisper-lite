@@ -66,7 +66,7 @@ export const whisperModels: WhisperModel[] = [
     description: 'English-only Whisper medium model.',
     fileName: 'ggml-medium.en.bin',
     downloadUrl:
-      'https://github.com/antonistsiapaliokas/vscode-whisper-lite/releases/download/models/ggml-medium.en.bin',
+      'https://github.com/kokeroulis/vscode-whisper-lite/releases/download/release-assets/ggml-medium.en.bin',
     sizeLabel: 'Medium'
   }
 ];
