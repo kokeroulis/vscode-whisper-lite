@@ -1,0 +1,52 @@
+name: Package Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_artifact:
+        description: Upload the packaged VSIX as a workflow artifact.
+        required: false
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      upload_artifact:
+        description: Upload the packaged VSIX as a workflow artifact.
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package VSIX
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Whisper.cpp runtime
+        run: scripts/setup-whisper-cpp-macos-arm64.sh
+
+      - name: Package VS Code extension
+        run: npm run package:extension
+
+      - name: Upload VSIX artifact
+        if: ${{ inputs.upload_artifact }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-whisper-lite-vsix
+          path: artifacts/*.vsix
+          if-no-files-found: error
