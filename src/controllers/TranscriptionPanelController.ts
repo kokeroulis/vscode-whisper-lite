@@ -202,9 +202,19 @@ export class TranscriptionPanelController implements vscode.Disposable {
         return;
       }
 
+      if (this.audioService.getWorkflowState() !== 'translating') {
+        this.logger.info('Skipping transcription because the workflow was canceled.');
+        return;
+      }
+
       this.logger.info(`Audio recording ready at ${temporaryAudioFile.path}.`);
       this.audioService.markTranslating();
       await this.postStateToWebview();
+
+      if (this.audioService.getWorkflowState() !== 'translating') {
+        this.logger.info('Skipping transcription because the workflow was canceled.');
+        return;
+      }
 
       const transcription = await this.transcriptionService.transcribeAudio(
         temporaryAudioFile,
@@ -307,7 +317,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
       return;
     }
 
-    void this.panel.webview.postMessage(await this.createState(progress));
+    await this.panel.webview.postMessage(await this.createState(progress));
   }
 
   private async createState(progress?: ModelDownloadProgress): Promise<TranscriptionPanelState> {

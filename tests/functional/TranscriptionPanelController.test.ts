@@ -414,6 +414,31 @@ describe('TranscriptionPanelController functional flow', () => {
     });
   });
 
+  it('does not restart translating when cancel races with stop', async () => {
+    const { controller, fileSystemService, panel, transcriptionService } = createFixture();
+
+    await controller.open();
+    panel.webview.emitMessage({ type: 'startTranscription' });
+    await vi.waitFor(() => {
+      expect(lastStateMessage(panel)).toMatchObject({
+        workflowState: 'recording'
+      });
+    });
+
+    panel.webview.emitMessage({ type: 'stopTranscription' });
+    panel.webview.emitMessage({ type: 'cancelTranscription' });
+    await flushPromises();
+
+    expect(transcriptionService.cancelTranscription).toHaveBeenCalled();
+    expect(transcriptionService.transcribeAudio).not.toHaveBeenCalled();
+    expect(fileSystemService.savedTranscriptions).toEqual([]);
+    expect(lastStateMessage(panel)).toMatchObject({
+      workflowState: 'idle',
+      isUiBlocked: false,
+      transcriptions: []
+    });
+  });
+
   it('downloads a model and posts progress updates to the webview', async () => {
     const { controller, panel } = createFixture();
 
