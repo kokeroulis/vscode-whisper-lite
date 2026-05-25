@@ -1,0 +1,51 @@
+{
+  "name": "vscode-whisper-lite",
+  "displayName": "VS Code Whisper Lite",
+  "description": "A lightweight VS Code extension scaffold for future Whisper.cpp transcription support.",
+  "version": "0.0.1",
+  "publisher": "antonistsiapaliokas",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:vscode-whisper-lite.openTranscriptions",
+    "onWebviewPanel:whisperLiteTranscriptions"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscode-whisper-lite.openTranscriptions",
+        "title": "Whisper Lite: Open Transcriptions"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/services",
+    "test:smoke": "node tests/smoke/runSmokeTest.cjs",
+    "test:visual": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
+    "test:watch": "vitest",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^20.14.8",
+    "@types/vscode": "^1.90.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.39.4",
+    "typescript": "^5.5.2",
+    "vitest": "^4.1.7"
+  }
+}
