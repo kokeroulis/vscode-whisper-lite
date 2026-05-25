@@ -1,9 +1,6 @@
 name: Package Extension
 
 on:
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       upload_artifact:
@@ -47,7 +44,7 @@ jobs:
         run: npm run package:extension
 
       - name: Upload VSIX artifact
-        if: ${{ github.event_name == 'pull_request' || inputs.upload_artifact }}
+        if: ${{ inputs.upload_artifact }}
         uses: actions/upload-artifact@v4
         with:
           name: vscode-whisper-lite-vsix
