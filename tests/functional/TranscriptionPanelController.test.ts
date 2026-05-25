@@ -13,6 +13,7 @@ import {
   WhisperModelId
 } from '../../src/services/DownloadModelService';
 import { FileSystemService } from '../../src/services/FileSystemService';
+import { NoopLoggerService } from '../../src/services/LoggerService';
 import { Transcription, TranscriptionService } from '../../src/services/TranscriptionService';
 import { TranscriptionWebView } from '../../src/views/TranscriptionWebView';
 import { createExtensionContext } from '../helpers/vscodeContext';
@@ -287,6 +288,7 @@ describe('TranscriptionPanelController functional flow', () => {
         transcriptionService,
         fileSystemService,
         downloadModelService,
+        new NoopLoggerService(),
         new TranscriptionWebView()
       ),
       downloadModelService,

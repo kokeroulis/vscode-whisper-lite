@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import * as vscode from 'vscode';
+import { LoggerService, NoopLoggerService } from './LoggerService';
 
 export type TemporaryAudioFile = {
   path: string;
@@ -24,7 +25,10 @@ export class NativeAudioService implements AudioService {
   private recorderProcess: ChildProcessWithoutNullStreams | undefined;
   private recordingAudioFile: TemporaryAudioFile | undefined;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly logger: LoggerService = new NoopLoggerService()
+  ) {}
 
   async startRecording(audioFile: TemporaryAudioFile): Promise<void> {
     if (this.workflowState !== 'idle') {
@@ -41,6 +45,8 @@ export class NativeAudioService implements AudioService {
       'macos-recorder.swift'
     );
 
+    this.logger.info(`Starting microphone recording to ${audioFile.path}.`);
+    this.logger.info(`Using macOS recorder script at ${recorderScriptPath}.`);
     this.recorderProcess = spawn('/usr/bin/swift', [recorderScriptPath, audioFile.path]);
     this.recordingAudioFile = audioFile;
     this.workflowState = 'recording';
@@ -51,7 +57,13 @@ export class NativeAudioService implements AudioService {
       }
     });
 
-    await waitForRecorderStartup(this.recorderProcess);
+    try {
+      await waitForRecorderStartup(this.recorderProcess);
+      this.logger.info('Microphone recording started.');
+    } catch (error) {
+      this.logger.error('Could not start microphone recording.', error);
+      throw error;
+    }
   }
 
   stopRecording(): Promise<TemporaryAudioFile | undefined> {
@@ -67,6 +79,7 @@ export class NativeAudioService implements AudioService {
     const audioFile = this.recordingAudioFile;
 
     this.workflowState = 'translating';
+    this.logger.info(`Stopping microphone recording for ${audioFile.path}.`);
     recorderProcess.stdin.write('\n');
     recorderProcess.stdin.end();
 
@@ -84,10 +97,12 @@ export class NativeAudioService implements AudioService {
 
         if (code && code !== 0) {
           this.workflowState = 'idle';
+          this.logger.error(`Recorder failed while writing ${audioFile.path}.`, stderr.trim());
           reject(new Error(stderr.trim() || `Recorder exited with code ${code}.`));
           return;
         }
 
+        this.logger.info(`Microphone recording saved to ${audioFile.path}.`);
         resolve(audioFile);
       });
     });
@@ -95,6 +110,7 @@ export class NativeAudioService implements AudioService {
 
   cancelRecording(): void {
     if (this.recorderProcess) {
+      this.logger.warn('Canceling microphone recording.');
       this.recorderProcess.kill('SIGTERM');
       this.recorderProcess = undefined;
     }

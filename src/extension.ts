@@ -11,6 +11,7 @@ import {
 } from './services/AudioService';
 import { GithubReleaseDownloadModelService } from './services/DownloadModelService';
 import { VsCodeFileSystemService } from './services/FileSystemService';
+import { VsCodeLoggerService } from './services/LoggerService';
 import {
   Transcription,
   TranscriptionService,
@@ -21,15 +22,17 @@ let transcriptionPanelController: TranscriptionPanelController | undefined;
 const smokeTestEnv = 'VSCODE_WHISPER_LITE_SMOKE_TEST';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  const downloadModelService = new GithubReleaseDownloadModelService(context);
-  const audioService = createAudioService(context);
+  const logger = new VsCodeLoggerService(vscode.window.createOutputChannel('Whisper Lite'));
+  const downloadModelService = new GithubReleaseDownloadModelService(context, logger);
+  const audioService = createAudioService(context, logger);
 
   transcriptionPanelController = new TranscriptionPanelController(
     context,
     audioService,
-    createTranscriptionService(context, downloadModelService),
-    new VsCodeFileSystemService(context),
-    downloadModelService
+    createTranscriptionService(context, downloadModelService, logger),
+    new VsCodeFileSystemService(context, logger),
+    downloadModelService,
+    logger
   );
 
   await transcriptionPanelController.initialize();
@@ -53,24 +56,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerSmokeTestCommands(context);
   }
 
-  context.subscriptions.push(openUiCommand, panelSerializer, transcriptionPanelController);
+  context.subscriptions.push(logger, openUiCommand, panelSerializer, transcriptionPanelController);
 }
 
 export function deactivate(): void {
   transcriptionPanelController?.dispose();
 }
 
-function createAudioService(context: vscode.ExtensionContext): AudioService {
-  return isSmokeTestEnabled() ? new SmokeTestAudioService() : new NativeAudioService(context);
+function createAudioService(
+  context: vscode.ExtensionContext,
+  logger: VsCodeLoggerService
+): AudioService {
+  return isSmokeTestEnabled() ? new SmokeTestAudioService() : new NativeAudioService(context, logger);
 }
 
 function createTranscriptionService(
   context: vscode.ExtensionContext,
-  downloadModelService: GithubReleaseDownloadModelService
+  downloadModelService: GithubReleaseDownloadModelService,
+  logger: VsCodeLoggerService
 ): TranscriptionService {
   return isSmokeTestEnabled()
     ? new SmokeTestTranscriptionService()
-    : new WhisperCliTranscriptionService(context, downloadModelService);
+    : new WhisperCliTranscriptionService(context, downloadModelService, logger);
 }
 
 function isSmokeTestEnabled(): boolean {

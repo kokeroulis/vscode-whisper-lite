@@ -7,6 +7,10 @@ export const ViewColumn = {
 } as const;
 
 export const window = {
+  createOutputChannel: (): { appendLine: (value: string) => void; dispose: () => void } => ({
+    appendLine: (_value: string): void => {},
+    dispose: (): void => {}
+  }),
   createWebviewPanel: (): unknown => {
     throw new Error('createWebviewPanel must be provided by the test.');
   },
