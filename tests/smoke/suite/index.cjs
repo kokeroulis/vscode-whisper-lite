@@ -29,13 +29,12 @@ async function run() {
   );
 
   await vscode.commands.executeCommand('vscode-whisper-lite.test.startTranscription');
-  await waitForState((state) => state.workflowState === 'recording', 'recording state');
-
-  await vscode.commands.executeCommand('vscode-whisper-lite.test.stopTranscription');
-  await waitForState((state) => state.workflowState === 'translating', 'translating state');
-
-  await vscode.commands.executeCommand('vscode-whisper-lite.test.cancelTranscription');
-  await waitForState((state) => state.workflowState === 'idle', 'idle state after cancel');
+  await waitForState(
+    (state) =>
+      state.workflowState === 'idle' &&
+      state.modelCatalog.models.some((model) => model.id === 'medium.en' && !model.installed),
+    'idle state when no model is downloaded'
+  );
 
   await vscode.commands.executeCommand('vscode-whisper-lite.test.downloadModel');
   const downloadedState = await waitForState(
@@ -50,6 +49,15 @@ async function run() {
 
   assert.ok(mediumModel, 'Medium English model should exist in the catalog.');
   assert.equal(mediumModel.status, 'downloaded');
+
+  await vscode.commands.executeCommand('vscode-whisper-lite.test.startTranscription');
+  await waitForState((state) => state.workflowState === 'recording', 'recording state');
+
+  await vscode.commands.executeCommand('vscode-whisper-lite.test.stopTranscription');
+  await waitForState((state) => state.workflowState === 'translating', 'translating state');
+
+  await vscode.commands.executeCommand('vscode-whisper-lite.test.cancelTranscription');
+  await waitForState((state) => state.workflowState === 'idle', 'idle state after cancel');
 }
 
 async function waitForWhisperLiteTab() {

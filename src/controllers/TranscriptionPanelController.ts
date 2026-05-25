@@ -155,6 +155,12 @@ export class TranscriptionPanelController implements vscode.Disposable {
   }
 
   private async startTranscription(): Promise<void> {
+    if (!(await this.hasUsableSelectedModel())) {
+      await this.postStateToWebview();
+      void vscode.window.showWarningMessage('Download and select a model before transcribing.');
+      return;
+    }
+
     const temporaryAudioFile = this.fileSystemService.createTemporaryAudioFile('audio/wav');
 
     try {
@@ -310,6 +316,12 @@ export class TranscriptionPanelController implements vscode.Disposable {
 
   private isUiBlocked(): boolean {
     return this.audioService.getWorkflowState() === 'translating';
+  }
+
+  private async hasUsableSelectedModel(): Promise<boolean> {
+    const modelCatalog = await this.downloadModelService.getModelCatalogState();
+
+    return modelCatalog.models.some((model) => model.selected && model.installed);
   }
 }
 

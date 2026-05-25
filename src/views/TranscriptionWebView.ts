@@ -122,6 +122,15 @@ export class TranscriptionWebView {
       background: var(--cancel-hover);
     }
 
+    .primary-button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    .primary-button:disabled:hover {
+      background: var(--accent);
+    }
+
     button:focus-visible {
       outline: 1px solid var(--focus);
       outline-offset: 2px;
@@ -422,6 +431,7 @@ export class TranscriptionWebView {
       transcriptionToggle.textContent = getToggleLabel();
       transcriptionToggle.classList.toggle('running', workflowState === 'recording');
       transcriptionToggle.classList.toggle('cancel', workflowState === 'translating');
+      transcriptionToggle.disabled = isTranscriptionToggleDisabled();
       statusLabel.textContent = getStatusLabel();
       renderModels();
 
@@ -559,6 +569,10 @@ export class TranscriptionWebView {
     }
 
     function getToggleLabel() {
+      if (!hasUsableSelectedModel() && workflowState === 'idle') {
+        return 'Model not selected';
+      }
+
       if (workflowState === 'recording') {
         return 'Stop transcription';
       }
@@ -568,6 +582,10 @@ export class TranscriptionWebView {
       }
 
       return 'Start transcription';
+    }
+
+    function isTranscriptionToggleDisabled() {
+      return workflowState === 'idle' && !hasUsableSelectedModel();
     }
 
     function getStatusLabel() {
@@ -580,6 +598,10 @@ export class TranscriptionWebView {
       }
 
       return '';
+    }
+
+    function hasUsableSelectedModel() {
+      return modelCatalog.models.some((model) => model.selected && model.installed);
     }
 
     function createIconButton(action, id, label, icon, extraClass = '') {

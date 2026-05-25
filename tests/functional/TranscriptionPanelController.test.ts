@@ -186,23 +186,27 @@ class FakeFileSystemService implements FileSystemService {
 }
 
 class FakeDownloadModelService implements DownloadModelService {
-  private modelCatalog: ModelCatalogState = {
-    selectedModelId: 'medium.en',
-    models: [
-      {
-        id: 'medium.en',
-        name: 'Medium English',
-        description: 'English-only Whisper medium model.',
-        fileName: 'ggml-medium.en.bin',
-        downloadUrl: 'https://example.com/ggml-medium.en.bin',
-        sizeLabel: 'Medium',
-        installed: false,
-        selected: true,
-        localPath: '/models/ggml-medium.en.bin',
-        status: 'notDownloaded'
-      }
-    ]
-  };
+  private modelCatalog: ModelCatalogState;
+
+  constructor(modelInstalled: boolean = true) {
+    this.modelCatalog = {
+      selectedModelId: 'medium.en',
+      models: [
+        {
+          id: 'medium.en',
+          name: 'Medium English',
+          description: 'English-only Whisper medium model.',
+          fileName: 'ggml-medium.en.bin',
+          downloadUrl: 'https://example.com/ggml-medium.en.bin',
+          sizeLabel: 'Medium',
+          installed: modelInstalled,
+          selected: true,
+          localPath: '/models/ggml-medium.en.bin',
+          status: modelInstalled ? 'downloaded' : 'notDownloaded'
+        }
+      ]
+    };
+  }
   readonly selectModel: DownloadModelService['selectModel'] = vi.fn(
     (modelId: WhisperModelId): Promise<ModelCatalogState> => {
       this.modelCatalog = {
@@ -262,12 +266,15 @@ describe('TranscriptionPanelController functional flow', () => {
     vi.restoreAllMocks();
   });
 
-  function createFixture(savedTranscriptions: Transcription[] = []): ControllerFixture {
+  function createFixture(options: {
+    savedTranscriptions?: Transcription[];
+    modelInstalled?: boolean;
+  } = {}): ControllerFixture {
     const panel = new FakeWebviewPanel();
     const audioService = new FakeAudioService();
     const transcriptionService = new FakeTranscriptionService();
-    const fileSystemService = new FakeFileSystemService(savedTranscriptions);
-    const downloadModelService = new FakeDownloadModelService();
+    const fileSystemService = new FakeFileSystemService(options.savedTranscriptions ?? []);
+    const downloadModelService = new FakeDownloadModelService(options.modelInstalled);
 
     (vscodeMock.window as unknown as MutableVscodeWindow).createWebviewPanel = (): vscode.WebviewPanel =>
       panel as unknown as vscode.WebviewPanel;
@@ -295,7 +302,9 @@ describe('TranscriptionPanelController functional flow', () => {
       startedAt: 100,
       content: 'previous transcription'
     };
-    const { controller, panel } = createFixture([savedTranscription]);
+    const { controller, panel } = createFixture({
+      savedTranscriptions: [savedTranscription]
+    });
 
     await controller.open();
     panel.webview.emitMessage({ type: 'webviewReady' });
@@ -317,11 +326,12 @@ describe('TranscriptionPanelController functional flow', () => {
 
     await controller.open();
     panel.webview.emitMessage({ type: 'startTranscription' });
-    await flushPromises();
 
-    expect(lastStateMessage(panel)).toMatchObject({
-      workflowState: 'recording',
-      isUiBlocked: false
+    await vi.waitFor(() => {
+      expect(lastStateMessage(panel)).toMatchObject({
+        workflowState: 'recording',
+        isUiBlocked: false
+      });
     });
 
     panel.webview.emitMessage({ type: 'stopTranscription' });
@@ -354,6 +364,32 @@ describe('TranscriptionPanelController functional flow', () => {
           content: 'translated speech from whisper'
         })
       ]
+    });
+  });
+
+  it('does not start recording when no model is downloaded', async () => {
+    const { audioService, controller, panel, transcriptionService } = createFixture({
+      modelInstalled: false
+    });
+    const startRecordingSpy = vi.spyOn(audioService, 'startRecording');
+
+    await controller.open();
+    panel.webview.emitMessage({ type: 'startTranscription' });
+    await flushPromises();
+
+    expect(startRecordingSpy).not.toHaveBeenCalled();
+    expect(transcriptionService.transcribeAudio).not.toHaveBeenCalled();
+    expect(lastStateMessage(panel)).toMatchObject({
+      workflowState: 'idle',
+      modelCatalog: {
+        models: [
+          expect.objectContaining({
+            id: 'medium.en',
+            installed: false,
+            selected: true
+          })
+        ]
+      }
     });
   });
 

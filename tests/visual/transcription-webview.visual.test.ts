@@ -59,6 +59,26 @@ test('initial webview shows models and transcriptions', async ({ page }) => {
   await expect(page).toHaveScreenshot('transcription-webview-initial.png');
 });
 
+test('idle state disables transcription when no model is downloaded', async ({ page }) => {
+  await renderWebviewState(
+    page,
+    createState({
+      workflowState: 'idle',
+      model: {
+        ...baseModel,
+        installed: false,
+        selected: true,
+        status: 'notDownloaded'
+      }
+    })
+  );
+
+  await expect(page.getByRole('button', { name: 'Model not selected' })).toBeDisabled();
+  await expect(page.getByText('Medium English')).toBeVisible();
+  await expect(page.getByText('Not downloaded')).toBeVisible();
+  await expect(page).toHaveScreenshot('transcription-webview-model-not-selected.png');
+});
+
 test('recording state shows stop button while models remain visible', async ({ page }) => {
   await renderWebviewState(page, createState({ workflowState: 'recording' }));
 
