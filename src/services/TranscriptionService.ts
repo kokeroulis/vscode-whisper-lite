@@ -4,6 +4,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'node:child_process';
 import * as vscode from 'vscode';
 import { TemporaryAudioFile } from './AudioService';
 import { DownloadModelService } from './DownloadModelService';
+import { LoggerService, NoopLoggerService } from './LoggerService';
 
 export type WhisperSegment = {
   text: string;
@@ -58,7 +59,8 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly downloadModelService: DownloadModelService
+    private readonly downloadModelService: DownloadModelService,
+    private readonly logger: LoggerService = new NoopLoggerService()
   ) {}
 
   async transcribeAudio(
@@ -70,14 +72,17 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
       path.dirname(audioFile.path),
       `whisper-output-${Date.now()}-${Math.random().toString(16).slice(2)}`
     );
+    const jsonPath = `${outputBasePath}.json`;
 
     try {
+      this.logger.info(`Starting transcription for audio file ${audioFile.path}.`);
+      this.logger.info(`Whisper JSON output path: ${jsonPath}.`);
       await this.runWhisperCli(audioFile.path, outputBasePath);
 
-      const jsonPath = `${outputBasePath}.json`;
       const jsonContent = await fs.readFile(jsonPath, 'utf8');
       const whisperJson = JSON.parse(jsonContent) as WhisperJsonOutput;
       const content = extractTranscriptionText(whisperJson);
+      this.logger.info(`Finished transcription for audio file ${audioFile.path}.`);
 
       return {
         id: `${stoppedAt}-${Math.random().toString(16).slice(2)}`,
@@ -86,6 +91,9 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
         content,
         whisperJson
       };
+    } catch (error) {
+      this.logger.error(`Could not transcribe audio file ${audioFile.path}.`, error);
+      throw error;
     } finally {
       this.whisperProcess = undefined;
       await deleteIfExists(`${outputBasePath}.json`);
@@ -95,6 +103,7 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
 
   cancelTranscription(): void {
     if (this.whisperProcess) {
+      this.logger.warn('Canceling active Whisper transcription process.');
       this.whisperProcess.kill('SIGTERM');
       this.whisperProcess = undefined;
     }
@@ -121,6 +130,9 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
       '--no-timestamps'
     ];
 
+    this.logger.info(`Using Whisper CLI at ${whisperRuntime.cliPath}.`);
+    this.logger.info(`Using Whisper model at ${whisperRuntime.modelPath}.`);
+    this.logger.info(`Using VAD model at ${whisperRuntime.vadModelPath}.`);
     this.whisperProcess = spawn(whisperRuntime.cliPath, args);
 
     return new Promise<void>((resolve, reject) => {

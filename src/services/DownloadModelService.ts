@@ -6,6 +6,7 @@ import * as https from 'node:https';
 import { IncomingMessage } from 'node:http';
 import { pipeline } from 'node:stream/promises';
 import * as vscode from 'vscode';
+import { LoggerService, NoopLoggerService } from './LoggerService';
 
 export type WhisperModelId = 'medium.en';
 
@@ -74,8 +75,12 @@ export const whisperModels: WhisperModel[] = [
 export class GithubReleaseDownloadModelService implements DownloadModelService {
   private downloadingModelId: WhisperModelId | undefined;
   private latestProgress: ModelDownloadProgress | undefined;
+  private latestLoggedDownloadPercent: number | undefined;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly logger: LoggerService = new NoopLoggerService()
+  ) {}
 
   async getModelCatalogState(): Promise<ModelCatalogState> {
     const selectedModelId = await this.getSelectedModelId();
@@ -111,24 +116,35 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
     const temporaryPath = `${localPath}.download`;
 
     this.downloadingModelId = modelId;
+    this.latestLoggedDownloadPercent = undefined;
     this.latestProgress = {
       modelId,
       downloadedBytes: 0
     };
 
     try {
+      this.logger.info(`Starting ${model.name} download from ${model.downloadUrl}.`);
+      this.logger.info(`Temporary model download path: ${temporaryPath}.`);
+      this.logger.info(`Final model path: ${localPath}.`);
+
       await fs.mkdir(path.dirname(localPath), { recursive: true });
       await downloadFile(model, temporaryPath, (progress: ModelDownloadProgress): void => {
         this.latestProgress = progress;
+        this.logDownloadProgress(model, progress);
         onProgress(progress);
       });
       await fs.rename(temporaryPath, localPath);
+      this.logger.info(`Downloaded ${model.name} to ${localPath}.`);
       await this.selectModel(modelId);
 
       return this.getModelCatalogState();
+    } catch (error) {
+      this.logger.error(`Could not download ${model.name}.`, error);
+      throw error;
     } finally {
       this.downloadingModelId = undefined;
       this.latestProgress = undefined;
+      this.latestLoggedDownloadPercent = undefined;
       await deleteIfExists(temporaryPath);
     }
   }
@@ -147,6 +163,7 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
       `${JSON.stringify({ selectedModelId: modelId }, null, 2)}\n`,
       'utf8'
     );
+    this.logger.info(`Selected ${model.name} model at ${localPath}.`);
 
     return this.getModelCatalogState();
   }
@@ -188,6 +205,34 @@ export class GithubReleaseDownloadModelService implements DownloadModelService {
 
   private getSettingsPath(): string {
     return path.join(this.context.globalStorageUri.fsPath, modelSettingsFileName);
+  }
+
+  private logDownloadProgress(model: WhisperModel, progress: ModelDownloadProgress): void {
+    if (typeof progress.percent !== 'number') {
+      if (typeof this.latestLoggedDownloadPercent === 'undefined') {
+        this.latestLoggedDownloadPercent = 0;
+        this.logger.info(
+          `Downloading ${model.name}: ${formatBytes(progress.downloadedBytes)} received.`
+        );
+      }
+
+      return;
+    }
+
+    const nextLoggedPercent = Math.floor(progress.percent / 10) * 10;
+
+    if (
+      typeof this.latestLoggedDownloadPercent === 'number' &&
+      nextLoggedPercent <= this.latestLoggedDownloadPercent &&
+      progress.percent !== 100
+    ) {
+      return;
+    }
+
+    this.latestLoggedDownloadPercent = nextLoggedPercent;
+    this.logger.info(
+      `Downloading ${model.name}: ${progress.percent}% (${formatBytes(progress.downloadedBytes)} of ${formatBytes(progress.totalBytes)}).`
+    );
   }
 }
 
@@ -303,6 +348,27 @@ function parseContentLength(value: string | string[] | undefined): number | unde
   const parsed = Number.parseInt(value, 10);
 
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function formatBytes(bytes: number | undefined): string {
+  if (typeof bytes !== 'number') {
+    return 'unknown size';
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const units = ['KiB', 'MiB', 'GiB'];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

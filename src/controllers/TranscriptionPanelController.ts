@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { AudioService } from '../services/AudioService';
+import { AudioService, TemporaryAudioFile } from '../services/AudioService';
 import {
   DownloadModelService,
   ModelCatalogState,
@@ -7,6 +7,7 @@ import {
   WhisperModelId
 } from '../services/DownloadModelService';
 import { FileSystemService } from '../services/FileSystemService';
+import { LoggerService, NoopLoggerService } from '../services/LoggerService';
 import { Transcription, TranscriptionService } from '../services/TranscriptionService';
 import { TranscriptionWebView } from '../views/TranscriptionWebView';
 
@@ -40,12 +41,15 @@ export class TranscriptionPanelController implements vscode.Disposable {
     private readonly transcriptionService: TranscriptionService,
     private readonly fileSystemService: FileSystemService,
     private readonly downloadModelService: DownloadModelService,
+    private readonly logger: LoggerService = new NoopLoggerService(),
     private readonly transcriptionWebView: TranscriptionWebView = new TranscriptionWebView()
   ) {}
 
   async initialize(): Promise<void> {
+    this.logger.info('Initializing Whisper Lite extension.');
     await this.fileSystemService.clearTemporaryAudioFiles();
     this.transcriptions = await this.fileSystemService.loadTranscriptions();
+    this.logger.info(`Loaded ${this.transcriptions.length} saved transcription records.`);
   }
 
   async open(): Promise<void> {
@@ -156,6 +160,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
 
   private async startTranscription(): Promise<void> {
     if (!(await this.hasUsableSelectedModel())) {
+      this.logger.warn('Transcription was requested without a downloaded selected model.');
       await this.postStateToWebview();
       void vscode.window.showWarningMessage('Download and select a model before transcribing.');
       return;
@@ -164,10 +169,12 @@ export class TranscriptionPanelController implements vscode.Disposable {
     const temporaryAudioFile = this.fileSystemService.createTemporaryAudioFile('audio/wav');
 
     try {
+      this.logger.info('Starting transcription workflow.');
       await this.audioService.startRecording(temporaryAudioFile);
       this.recordingStartedAt = Date.now();
       await this.postStateToWebview();
     } catch (error) {
+      this.logger.error('Could not start transcription workflow.', error);
       await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
       await this.postStateToWebview();
       await vscode.window.showErrorMessage(
@@ -179,18 +186,23 @@ export class TranscriptionPanelController implements vscode.Disposable {
   private async stopTranscription(): Promise<void> {
     const stopStartedAt = Date.now();
     const startedAt = this.recordingStartedAt ?? stopStartedAt;
-    const audioFilePromise = this.audioService.stopRecording();
-
-    await this.postStateToWebview();
-
-    const temporaryAudioFile = await audioFilePromise;
-
-    if (!temporaryAudioFile) {
-      await this.postStateToWebview();
-      return;
-    }
+    let temporaryAudioFile: TemporaryAudioFile | undefined;
 
     try {
+      this.logger.info('Stopping transcription workflow.');
+      const audioFilePromise = this.audioService.stopRecording();
+
+      await this.postStateToWebview();
+
+      temporaryAudioFile = await audioFilePromise;
+
+      if (!temporaryAudioFile) {
+        this.logger.warn('Stop transcription requested, but no audio file was returned.');
+        await this.postStateToWebview();
+        return;
+      }
+
+      this.logger.info(`Audio recording ready at ${temporaryAudioFile.path}.`);
       this.audioService.markTranslating();
       await this.postStateToWebview();
 
@@ -201,16 +213,23 @@ export class TranscriptionPanelController implements vscode.Disposable {
       );
 
       this.transcriptions = [transcription, ...this.transcriptions];
+      this.logger.info(`Transcription finished with id ${transcription.id}.`);
       await this.saveAndRender();
+    } catch (error) {
+      this.logger.error('Could not stop or transcribe recording.', error);
+      await vscode.window.showErrorMessage(`Could not transcribe audio: ${getErrorMessage(error)}`);
     } finally {
       this.recordingStartedAt = undefined;
       this.audioService.markIdle();
-      await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
+      if (temporaryAudioFile) {
+        await this.fileSystemService.deleteTemporaryAudioFile(temporaryAudioFile);
+      }
       await this.postStateToWebview();
     }
   }
 
   private cancelTranscription(): void {
+    this.logger.warn('Canceling transcription workflow.');
     this.audioService.cancelRecording();
     this.transcriptionService.cancelTranscription();
     this.audioService.markIdle();
@@ -262,6 +281,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
       );
       await this.postStateToWebview();
     } catch (error) {
+      this.logger.error('Could not download model.', error);
       await this.postStateToWebview();
       await vscode.window.showErrorMessage(`Could not download model: ${getErrorMessage(error)}`);
     }
@@ -276,6 +296,7 @@ export class TranscriptionPanelController implements vscode.Disposable {
       await this.downloadModelService.selectModel(modelId);
       await this.postStateToWebview();
     } catch (error) {
+      this.logger.error('Could not select model.', error);
       await vscode.window.showWarningMessage(getErrorMessage(error));
       await this.postStateToWebview();
     }

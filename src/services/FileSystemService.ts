@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { TemporaryAudioFile } from './AudioService';
+import { LoggerService, NoopLoggerService } from './LoggerService';
 import { Transcription } from './TranscriptionService';
 
 export type RecordedAudioPayload = {
@@ -24,7 +25,10 @@ const storageFileName = 'transcriptions.json';
 const temporaryAudioDirectoryName = 'vscode-whisper-lite';
 
 export class VsCodeFileSystemService implements FileSystemService {
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly logger: LoggerService = new NoopLoggerService()
+  ) {}
 
   async loadTranscriptions(): Promise<Transcription[]> {
     try {
@@ -48,11 +52,17 @@ export class VsCodeFileSystemService implements FileSystemService {
   }
 
   async saveTranscriptions(transcriptions: Transcription[]): Promise<void> {
+    const storageFilePath = this.getStorageFilePath();
+
     await fs.mkdir(this.context.globalStorageUri.fsPath, { recursive: true });
     await fs.writeFile(
-      this.getStorageFilePath(),
+      storageFilePath,
       `${JSON.stringify(transcriptions, null, 2)}\n`,
       'utf8'
+    );
+
+    this.logger.info(
+      `Saved ${transcriptions.length} transcription${transcriptions.length === 1 ? '' : 's'} to ${storageFilePath}.`
     );
   }
 
@@ -60,10 +70,14 @@ export class VsCodeFileSystemService implements FileSystemService {
     const extension = getAudioFileExtension(mimeType);
     const fileName = `recording-${Date.now()}-${Math.random().toString(16).slice(2)}.${extension}`;
 
-    return {
+    const audioFile = {
       path: path.join(this.getTemporaryAudioDirectory(), fileName),
       mimeType
     };
+
+    this.logger.info(`Created temporary audio file path ${audioFile.path}.`);
+
+    return audioFile;
   }
 
   async saveTemporaryAudioFile(recording: RecordedAudioPayload): Promise<TemporaryAudioFile> {
@@ -72,6 +86,7 @@ export class VsCodeFileSystemService implements FileSystemService {
 
     await fs.mkdir(this.getTemporaryAudioDirectory(), { recursive: true });
     await fs.writeFile(audioFile.path, audioBuffer);
+    this.logger.info(`Saved temporary audio recording to ${audioFile.path}.`);
 
     return audioFile;
   }
@@ -79,17 +94,22 @@ export class VsCodeFileSystemService implements FileSystemService {
   async deleteTemporaryAudioFile(audioFile: TemporaryAudioFile): Promise<void> {
     try {
       await fs.unlink(audioFile.path);
+      this.logger.info(`Deleted temporary audio file ${audioFile.path}.`);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
 
       if (code !== 'ENOENT') {
+        this.logger.error(`Could not delete temporary audio file ${audioFile.path}.`, error);
         throw error;
       }
     }
   }
 
   async clearTemporaryAudioFiles(): Promise<void> {
-    await fs.rm(this.getTemporaryAudioDirectory(), { recursive: true, force: true });
+    const temporaryAudioDirectory = this.getTemporaryAudioDirectory();
+
+    await fs.rm(temporaryAudioDirectory, { recursive: true, force: true });
+    this.logger.info(`Cleared temporary audio directory ${temporaryAudioDirectory}.`);
   }
 
   getTemporaryAudioDirectory(): string {
