@@ -1,4 +1,6 @@
 import { expect, Page, test } from '@playwright/test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { Transcription } from '../../src/services/TranscriptionService';
 import { ModelCatalogState, WhisperModelState } from '../../src/services/DownloadModelService';
 import { TranscriptionWebView } from '../../src/views/TranscriptionWebView';
@@ -130,11 +132,26 @@ test('model download state shows progress bar', async ({ page }) => {
 async function renderWebviewState(page: Page, state: WebviewState): Promise<void> {
   const html = new TranscriptionWebView().render({
     cspSource: "'self'",
-    nonce: 'visual-test-nonce'
+    nonce: 'visual-test-nonce',
+    styleUri: 'transcription-webview.css',
+    scriptUri: 'transcription-webview-client.js'
   });
-  const testHtml = html.replace(
-    '<script nonce="visual-test-nonce">',
-    `<script nonce="visual-test-nonce">
+  const stylesheet = fs.readFileSync(
+    path.join(process.cwd(), 'out', 'views', 'TranscriptionWebView.css'),
+    'utf8'
+  );
+  const clientScript = fs.readFileSync(
+    path.join(process.cwd(), 'out', 'views', 'TranscriptionWebViewClient.js'),
+    'utf8'
+  );
+  const testHtml = html
+    .replace(
+      '<link rel="stylesheet" href="transcription-webview.css">',
+      `<style>${stylesheet}</style>`
+    )
+    .replace(
+      '<script nonce="visual-test-nonce" src="transcription-webview-client.js"></script>',
+      `<script nonce="visual-test-nonce">
       window.vscodeMessages = [];
       window.acquireVsCodeApi = () => ({
         postMessage: (message) => {
@@ -142,8 +159,8 @@ async function renderWebviewState(page: Page, state: WebviewState): Promise<void
         }
       });
     </script>
-    <script nonce="visual-test-nonce">`
-  );
+    <script nonce="visual-test-nonce">${clientScript}</script>`
+    );
 
   await page.setContent(testHtml);
   await page.addStyleTag({

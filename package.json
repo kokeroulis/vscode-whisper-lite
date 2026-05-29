@@ -29,13 +29,13 @@
     ]
   },
   "scripts": {
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && tsc -p tsconfig.webview.json && node scripts/copy-webview-assets.cjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest run",
     "test:unit": "vitest run tests/services",
     "test:smoke": "node tests/smoke/runSmokeTest.cjs",
-    "test:visual": "playwright test",
+    "test:visual": "npm run compile && playwright test",
     "test:visual:update": "playwright test --update-snapshots",
     "test:watch": "vitest",
     "watch": "tsc -watch -p ./",

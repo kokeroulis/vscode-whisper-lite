@@ -64,6 +64,10 @@ class FakeWebview {
     return Promise.resolve(true);
   }
 
+  asWebviewUri(uri: vscode.Uri): vscode.Uri {
+    return uri;
+  }
+
   emitMessage(message: WebviewMessage): void {
     this.messageHandler?.(message);
   }

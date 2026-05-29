@@ -90,7 +90,17 @@ export class TranscriptionPanelController implements vscode.Disposable {
     webviewPanel.webview.options = {
       enableScripts: true
     };
-    webviewPanel.webview.html = this.transcriptionWebView.renderForWebview(webviewPanel.webview);
+    const styleUri = webviewPanel.webview
+      .asWebviewUri(vscode.Uri.file(this.transcriptionWebView.getStylesheetPath()))
+      .toString();
+    const scriptUri = webviewPanel.webview
+      .asWebviewUri(vscode.Uri.file(this.transcriptionWebView.getClientScriptPath()))
+      .toString();
+    webviewPanel.webview.html = this.transcriptionWebView.renderForWebview(
+      webviewPanel.webview,
+      styleUri,
+      scriptUri
+    );
     this.disposables.push(
       webviewPanel.webview.onDidReceiveMessage((message: WebviewMessage) => {
         void this.handleWebviewMessage(message);
