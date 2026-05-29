@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{CSP_SOURCE}} 'unsafe-inline'; script-src 'nonce-{{NONCE}}';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whisper Lite</title>
+  <link rel="stylesheet" href="{{STYLE_URI}}">
+</head>
+<body>
+  <main class="app">
+    <section class="toolbar" aria-label="Transcription controls">
+      <div class="heading">
+        <h1 class="title">Whisper Lite</h1>
+        <div class="status" id="statusLabel" aria-live="polite"></div>
+      </div>
+      <button class="primary-button" type="button" id="transcriptionToggle" data-testid="transcription-toggle">Start transcription</button>
+    </section>
+    <section class="models" aria-label="Whisper models">
+      <h2 class="section-title">Models</h2>
+      <div class="model-list" id="modelList" data-testid="model-list"></div>
+    </section>
+    <section class="list" id="transcriptionList" aria-label="Active transcriptions" data-testid="transcription-list"></section>
+  </main>
+
+  <script nonce="{{NONCE}}" src="{{SCRIPT_URI}}"></script>
+</body>
+</html>
