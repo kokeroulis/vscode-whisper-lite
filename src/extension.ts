@@ -149,18 +149,77 @@ class SmokeTestAudioService implements AudioService {
 }
 
 class SmokeTestTranscriptionService implements TranscriptionService {
+  private activeTimeout: NodeJS.Timeout | undefined;
+
   transcribeAudio(
     _audioFile: TemporaryAudioFile,
     startedAt: number,
     stoppedAt: number
   ): Promise<Transcription> {
-    return new Promise<Transcription>(() => {
-      void startedAt;
-      void stoppedAt;
+    return new Promise<Transcription>((resolve) => {
+      this.activeTimeout = setTimeout(() => {
+        this.activeTimeout = undefined;
+        resolve({
+          id: `smoke-${stoppedAt}`,
+          startedAt,
+          stoppedAt,
+          content: 'smoke test confidence transcript',
+          confidence: {
+            text: 'smoke test confidence transcript',
+            averageConfidence: 0.7,
+            lowConfidenceRanges: [
+              {
+                startOffset: 11,
+                endOffset: 21,
+                confidence: 0.42
+              }
+            ],
+            words: [
+              {
+                text: 'smoke',
+                startOffset: 0,
+                endOffset: 5,
+                confidence: 0.96,
+                confidenceClass: 'high',
+                tokens: []
+              },
+              {
+                text: 'test',
+                startOffset: 6,
+                endOffset: 10,
+                confidence: 0.72,
+                confidenceClass: 'medium',
+                tokens: []
+              },
+              {
+                text: 'confidence',
+                startOffset: 11,
+                endOffset: 21,
+                confidence: 0.42,
+                confidenceClass: 'low',
+                tokens: []
+              },
+              {
+                text: 'transcript',
+                startOffset: 22,
+                endOffset: 32,
+                confidence: 0.9,
+                confidenceClass: 'high',
+                tokens: []
+              }
+            ]
+          }
+        });
+      }, 150);
     });
   }
 
-  cancelTranscription(): void {}
+  cancelTranscription(): void {
+    if (this.activeTimeout) {
+      clearTimeout(this.activeTimeout);
+      this.activeTimeout = undefined;
+    }
+  }
 
   dispose(): void {
     this.cancelTranscription();

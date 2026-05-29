@@ -51,6 +51,33 @@ describe('VsCodeFileSystemService', () => {
     await expect(service.loadTranscriptions()).resolves.toEqual(transcriptions);
   });
 
+  it('loads legacy transcriptions without confidence metadata', async () => {
+    const { service, tempRoot } = await createService();
+    const storagePath = path.join(tempRoot, 'global-storage', 'transcriptions.json');
+
+    await fs.mkdir(path.dirname(storagePath), { recursive: true });
+    await fs.writeFile(
+      storagePath,
+      JSON.stringify([
+        {
+          id: 'legacy-transcription',
+          startedAt: 100,
+          stoppedAt: 200,
+          content: 'saved before confidence metadata existed'
+        }
+      ])
+    );
+
+    await expect(service.loadTranscriptions()).resolves.toEqual([
+      {
+        id: 'legacy-transcription',
+        startedAt: 100,
+        stoppedAt: 200,
+        content: 'saved before confidence metadata existed'
+      }
+    ]);
+  });
+
   it('filters invalid transcription records while loading', async () => {
     const { service, tempRoot } = await createService();
     const storagePath = path.join(tempRoot, 'global-storage', 'transcriptions.json');

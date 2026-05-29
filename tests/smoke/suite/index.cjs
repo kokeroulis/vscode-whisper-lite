@@ -58,6 +58,29 @@ async function run() {
 
   await vscode.commands.executeCommand('vscode-whisper-lite.test.cancelTranscription');
   await waitForState((state) => state.workflowState === 'idle', 'idle state after cancel');
+
+  await vscode.commands.executeCommand('vscode-whisper-lite.test.startTranscription');
+  await waitForState((state) => state.workflowState === 'recording', 'second recording state');
+
+  await vscode.commands.executeCommand('vscode-whisper-lite.test.stopTranscription');
+  const completedState = await waitForState(
+    (state) =>
+      state.workflowState === 'idle' &&
+      state.transcriptions.some(
+        (transcription) =>
+          transcription.content === 'smoke test confidence transcript' &&
+          transcription.confidence &&
+          transcription.confidence.words.some(
+            (word) => word.text === 'confidence' && word.confidenceClass === 'low'
+          )
+      ),
+    'completed transcription with confidence metadata'
+  );
+
+  assert.ok(
+    completedState.transcriptions[0].confidence,
+    'Completed smoke transcription should include confidence metadata'
+  );
 }
 
 async function waitForWhisperLiteTab() {

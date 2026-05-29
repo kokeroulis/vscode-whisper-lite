@@ -40,7 +40,92 @@ const transcriptions: Transcription[] = [
     id: 'visual-1',
     startedAt: Date.UTC(2026, 4, 24, 10, 15, 0),
     stoppedAt: Date.UTC(2026, 4, 24, 10, 15, 8),
-    content: 'This is the first captured transcription from Whisper Lite.'
+    content: 'This is the first captured transcription from Whisper Lite.',
+    confidence: {
+      text: 'This is the first captured transcription from Whisper Lite.',
+      averageConfidence: 0.8,
+      lowConfidenceRanges: [
+        {
+          startOffset: 27,
+          endOffset: 40,
+          confidence: 0.41
+        }
+      ],
+      words: [
+        {
+          text: 'This',
+          startOffset: 0,
+          endOffset: 4,
+          confidence: 0.96,
+          confidenceClass: 'high',
+          tokens: []
+        },
+        {
+          text: 'is',
+          startOffset: 5,
+          endOffset: 7,
+          confidence: 0.72,
+          confidenceClass: 'medium',
+          tokens: []
+        },
+        {
+          text: 'the',
+          startOffset: 8,
+          endOffset: 11,
+          confidence: 0.91,
+          confidenceClass: 'high',
+          tokens: []
+        },
+        {
+          text: 'first',
+          startOffset: 12,
+          endOffset: 17,
+          confidence: 0.9,
+          confidenceClass: 'high',
+          tokens: []
+        },
+        {
+          text: 'captured',
+          startOffset: 18,
+          endOffset: 26,
+          confidence: 0.66,
+          confidenceClass: 'medium',
+          tokens: []
+        },
+        {
+          text: 'transcription',
+          startOffset: 27,
+          endOffset: 40,
+          confidence: 0.41,
+          confidenceClass: 'low',
+          tokens: []
+        },
+        {
+          text: 'from',
+          startOffset: 41,
+          endOffset: 45,
+          confidence: 0.89,
+          confidenceClass: 'high',
+          tokens: []
+        },
+        {
+          text: 'Whisper',
+          startOffset: 46,
+          endOffset: 53,
+          confidence: 0.88,
+          confidenceClass: 'high',
+          tokens: []
+        },
+        {
+          text: 'Lite.',
+          startOffset: 54,
+          endOffset: 59,
+          confidence: 0.93,
+          confidenceClass: 'high',
+          tokens: []
+        }
+      ]
+    }
   },
   {
     id: 'visual-2',
@@ -129,6 +214,39 @@ test('model download state shows progress bar', async ({ page }) => {
   await expect(page).toHaveScreenshot('transcription-webview-model-downloading.png');
 });
 
+test('confidence tab shows highlighted confidence spans and keeps actions visible', async ({ page }) => {
+  await renderWebviewState(page, createState({ workflowState: 'idle' }));
+
+  await page.getByRole('button', { name: 'Confidence' }).click();
+
+  await expect(page.locator('.confidence-word.low')).toContainText('transcription');
+  await expect(page.locator('.confidence-word.medium').filter({ hasText: 'is' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy transcription' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete transcription' }).first()).toBeVisible();
+  await expect(page).toHaveScreenshot('transcription-webview-confidence.png');
+});
+
+test('confidence tab renders legacy transcriptions without confidence metadata', async ({ page }) => {
+  await renderWebviewState(
+    page,
+    createState({
+      workflowState: 'idle',
+      transcriptions: [
+        {
+          id: 'legacy-visual',
+          startedAt: Date.UTC(2026, 4, 24, 10, 20, 0),
+          content: 'Legacy transcription without confidence data.'
+        }
+      ]
+    })
+  );
+
+  await page.getByRole('button', { name: 'Confidence' }).click();
+
+  await expect(page.getByText('Legacy transcription without confidence data.')).toBeVisible();
+  await expect(page.locator('.confidence-word')).toHaveCount(0);
+});
+
 async function renderWebviewState(page: Page, state: WebviewState): Promise<void> {
   const html = new TranscriptionWebView().render({
     cspSource: "'self'",
@@ -199,10 +317,11 @@ function createState(options: {
   workflowState?: WebviewState['workflowState'];
   isUiBlocked?: boolean;
   model?: WhisperModelState;
+  transcriptions?: Transcription[];
 }): WebviewState {
   return {
     type: 'state',
-    transcriptions,
+    transcriptions: options.transcriptions ?? transcriptions,
     workflowState: options.workflowState ?? 'idle',
     isUiBlocked: options.isUiBlocked ?? false,
     modelCatalog: {

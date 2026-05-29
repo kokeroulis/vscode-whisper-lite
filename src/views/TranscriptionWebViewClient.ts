@@ -4,6 +4,8 @@
   type ModelAction = 'downloadModel' | 'selectModel';
   type TranscriptionAction = 'copyTranscription' | 'deleteTranscription';
   type ToggleAction = 'startTranscription' | 'stopTranscription' | 'cancelTranscription';
+  type ActiveTranscriptTab = 'plain' | 'confidence';
+  type ConfidenceClass = 'high' | 'medium' | 'low';
 
   type OutgoingWebviewMessage =
     | { type: 'webviewReady' }
@@ -23,6 +25,21 @@
     id: string;
     startedAt: number;
     content: string;
+    confidence?: TranscriptConfidence;
+  };
+
+  type WordConfidence = {
+    text: string;
+    startOffset: number;
+    endOffset: number;
+    confidence: number;
+    confidenceClass: ConfidenceClass;
+  };
+
+  type TranscriptConfidence = {
+    text: string;
+    words: WordConfidence[];
+    averageConfidence?: number;
   };
 
   type ModelDownloadProgress = {
@@ -58,9 +75,12 @@
     private readonly statusLabel: HTMLElement;
     private readonly transcriptionList: HTMLElement;
     private readonly modelList: HTMLElement;
+    private readonly plainTab: HTMLButtonElement;
+    private readonly confidenceTab: HTMLButtonElement;
     private transcriptions: Transcription[] = [];
     private workflowState: WorkflowState = 'idle';
     private isUiBlocked: boolean = false;
+    private activeTab: ActiveTranscriptTab = 'plain';
     private modelCatalog: ModelCatalogState = {
       models: [],
       selectedModelId: 'medium.en'
@@ -71,6 +91,8 @@
       this.statusLabel = getRequiredElement('statusLabel', HTMLElement);
       this.transcriptionList = getRequiredElement('transcriptionList', HTMLElement);
       this.modelList = getRequiredElement('modelList', HTMLElement);
+      this.plainTab = getRequiredElement('plainTab', HTMLButtonElement);
+      this.confidenceTab = getRequiredElement('confidenceTab', HTMLButtonElement);
     }
 
     start(): void {
@@ -90,6 +112,13 @@
 
       this.transcriptionList.addEventListener('click', (event: MouseEvent) => {
         this.handleTranscriptionClick(event);
+      });
+
+      this.plainTab.addEventListener('click', () => {
+        this.selectTab('plain');
+      });
+      this.confidenceTab.addEventListener('click', () => {
+        this.selectTab('confidence');
       });
 
       this.render();
@@ -141,6 +170,7 @@
       this.transcriptionToggle.disabled = this.isTranscriptionToggleDisabled();
       this.statusLabel.textContent = this.getStatusLabel();
       this.renderModels();
+      this.renderTabs();
 
       if (this.transcriptions.length === 0) {
         this.transcriptionList.innerHTML = '<p class="empty-state">No active transcriptions yet.</p>';
@@ -165,6 +195,18 @@
           this.createModelItem(model)
         )
       );
+    }
+
+    private renderTabs(): void {
+      this.plainTab.classList.toggle('active', this.activeTab === 'plain');
+      this.confidenceTab.classList.toggle('active', this.activeTab === 'confidence');
+      this.plainTab.setAttribute('aria-selected', String(this.activeTab === 'plain'));
+      this.confidenceTab.setAttribute('aria-selected', String(this.activeTab === 'confidence'));
+    }
+
+    private selectTab(tab: ActiveTranscriptTab): void {
+      this.activeTab = tab;
+      this.render();
     }
 
     private createModelItem(model: WhisperModelState): HTMLElement {
@@ -253,7 +295,7 @@
       const meta = document.createElement('div');
 
       content.className = 'content';
-      content.textContent = transcription.content || 'second 1';
+      this.renderTranscriptionContent(content, transcription);
       meta.className = 'meta';
       meta.textContent = new Date(transcription.startedAt).toLocaleString();
       body.append(content, meta);
@@ -273,6 +315,20 @@
 
       item.append(body, actions);
       return item;
+    }
+
+    private renderTranscriptionContent(content: HTMLElement, transcription: Transcription): void {
+      if (this.activeTab === 'plain') {
+        content.textContent = transcription.content || 'second 1';
+        return;
+      }
+
+      if (!transcription.confidence || transcription.confidence.words.length === 0) {
+        content.textContent = transcription.content || 'Confidence data unavailable.';
+        return;
+      }
+
+      content.replaceChildren(...createConfidenceContentNodes(transcription.confidence));
     }
 
     private getToggleMessageType(): ToggleAction {
@@ -395,6 +451,30 @@
 
   function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
+  }
+
+  function createConfidenceContentNodes(confidence: TranscriptConfidence): Node[] {
+    const nodes: Node[] = [];
+    let offset = 0;
+
+    for (const word of confidence.words) {
+      if (word.startOffset > offset) {
+        nodes.push(document.createTextNode(confidence.text.slice(offset, word.startOffset)));
+      }
+
+      const wordSpan = document.createElement('span');
+      wordSpan.className = `confidence-word ${word.confidenceClass}`;
+      wordSpan.textContent = confidence.text.slice(word.startOffset, word.endOffset) || word.text;
+      wordSpan.title = `Confidence: ${Math.round(word.confidence * 100)}%`;
+      nodes.push(wordSpan);
+      offset = word.endOffset;
+    }
+
+    if (offset < confidence.text.length) {
+      nodes.push(document.createTextNode(confidence.text.slice(offset)));
+    }
+
+    return nodes.length > 0 ? nodes : [document.createTextNode(confidence.text)];
   }
 
   function copyIcon(): string {
