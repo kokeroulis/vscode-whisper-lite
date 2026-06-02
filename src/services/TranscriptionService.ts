@@ -210,7 +210,7 @@ async function getWhisperRuntimePaths(
 
 function extractTranscriptionText(whisperJson: WhisperJsonOutput): string {
   const segments = whisperJson.transcription ?? [];
-  const text = segments.map((segment) => segment.text).join('').trim();
+  const text = normalizeWhisperText(segments.map((segment) => segment.text).join(''));
 
   return text || 'No speech detected.';
 }
@@ -227,7 +227,7 @@ function extractTranscriptConfidence(
 
   const rawText = tokenSpans.map((span) => span.token.text).join('');
   const trimStartOffset = rawText.length - rawText.trimStart().length;
-  const text = rawText.trim() || fallbackText;
+  const text = normalizeWhisperText(rawText) || fallbackText;
 
   if (!text || text === 'No speech detected.') {
     return undefined;
@@ -301,15 +301,21 @@ function getTokenSpans(whisperJson: WhisperJsonOutput): TokenSpan[] {
         continue;
       }
 
+      const sanitizedTokenText = removeWhisperSpecialTokens(token.text);
+
+      if (!sanitizedTokenText) {
+        continue;
+      }
+
       const startOffset = currentOffset;
-      const endOffset = startOffset + token.text.length;
+      const endOffset = startOffset + sanitizedTokenText.length;
       currentOffset = endOffset;
       tokenSpans.push({
-        text: token.text,
+        text: sanitizedTokenText,
         startOffset,
         endOffset,
         token: {
-          text: token.text,
+          text: sanitizedTokenText,
           tokenId: token.id,
           confidence: token.p,
           ...(typeof token.offsets?.from === 'number' ? { startMs: token.offsets.from } : {}),
@@ -358,6 +364,14 @@ function classifyConfidence(confidence: number): ConfidenceClass {
   }
 
   return 'low';
+}
+
+function normalizeWhisperText(text: string): string {
+  return removeWhisperSpecialTokens(text).trim();
+}
+
+function removeWhisperSpecialTokens(text: string): string {
+  return text.replace(/<\|.*?\|>/g, '');
 }
 
 async function deleteIfExists(filePath: string): Promise<void> {

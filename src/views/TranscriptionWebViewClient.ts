@@ -319,12 +319,14 @@
 
     private renderTranscriptionContent(content: HTMLElement, transcription: Transcription): void {
       if (this.activeTab === 'plain') {
-        content.textContent = transcription.content || 'second 1';
+        content.textContent = sanitizeDisplayText(transcription.content || 'second 1');
         return;
       }
 
       if (!transcription.confidence || transcription.confidence.words.length === 0) {
-        content.textContent = transcription.content || 'Confidence data unavailable.';
+        content.textContent = sanitizeDisplayText(
+          transcription.content || 'Confidence data unavailable.'
+        );
         return;
       }
 
@@ -459,22 +461,43 @@
 
     for (const word of confidence.words) {
       if (word.startOffset > offset) {
-        nodes.push(document.createTextNode(confidence.text.slice(offset, word.startOffset)));
+        appendTextNode(nodes, confidence.text.slice(offset, word.startOffset));
+      }
+
+      const displayText = sanitizeDisplayText(
+        confidence.text.slice(word.startOffset, word.endOffset) || word.text
+      );
+
+      if (!displayText) {
+        offset = word.endOffset;
+        continue;
       }
 
       const wordSpan = document.createElement('span');
       wordSpan.className = `confidence-word ${word.confidenceClass}`;
-      wordSpan.textContent = confidence.text.slice(word.startOffset, word.endOffset) || word.text;
+      wordSpan.textContent = displayText;
       wordSpan.title = `Confidence: ${Math.round(word.confidence * 100)}%`;
       nodes.push(wordSpan);
       offset = word.endOffset;
     }
 
     if (offset < confidence.text.length) {
-      nodes.push(document.createTextNode(confidence.text.slice(offset)));
+      appendTextNode(nodes, confidence.text.slice(offset));
     }
 
-    return nodes.length > 0 ? nodes : [document.createTextNode(confidence.text)];
+    return nodes.length > 0 ? nodes : [document.createTextNode(sanitizeDisplayText(confidence.text))];
+  }
+
+  function appendTextNode(nodes: Node[], text: string): void {
+    const displayText = sanitizeDisplayText(text);
+
+    if (displayText) {
+      nodes.push(document.createTextNode(displayText));
+    }
+  }
+
+  function sanitizeDisplayText(text: string): string {
+    return text.replace(/<\|.*?\|>/g, '');
   }
 
   function copyIcon(): string {

@@ -219,6 +219,7 @@ test('confidence tab shows highlighted confidence spans and keeps actions visibl
 
   await page.getByRole('button', { name: 'Confidence' }).click();
 
+  await expect(page.locator('.confidence-word.high').filter({ hasText: 'This' })).toBeVisible();
   await expect(page.locator('.confidence-word.low')).toContainText('transcription');
   await expect(page.locator('.confidence-word.medium').filter({ hasText: 'is' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Copy transcription' }).first()).toBeVisible();
@@ -245,6 +246,49 @@ test('confidence tab renders legacy transcriptions without confidence metadata',
 
   await expect(page.getByText('Legacy transcription without confidence data.')).toBeVisible();
   await expect(page.locator('.confidence-word')).toHaveCount(0);
+});
+
+test('confidence tab hides saved Whisper special tokens', async ({ page }) => {
+  await renderWebviewState(
+    page,
+    createState({
+      workflowState: 'idle',
+      transcriptions: [
+        {
+          id: 'special-token-visual',
+          startedAt: Date.UTC(2026, 4, 24, 10, 25, 0),
+          content: 'Actual results.<|endoftext|>',
+          confidence: {
+            text: 'Actual results.<|endoftext|>',
+            lowConfidenceRanges: [],
+            words: [
+              {
+                text: 'Actual',
+                startOffset: 0,
+                endOffset: 6,
+                confidence: 0.94,
+                confidenceClass: 'high',
+                tokens: []
+              },
+              {
+                text: 'results.<|endoftext|>',
+                startOffset: 7,
+                endOffset: 28,
+                confidence: 0.91,
+                confidenceClass: 'high',
+                tokens: []
+              }
+            ]
+          }
+        }
+      ]
+    })
+  );
+
+  await page.getByRole('button', { name: 'Confidence' }).click();
+
+  await expect(page.getByText('<|endoftext|>')).toHaveCount(0);
+  await expect(page.getByText('results.')).toBeVisible();
 });
 
 async function renderWebviewState(page: Page, state: WebviewState): Promise<void> {

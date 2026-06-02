@@ -203,6 +203,58 @@ describe('WhisperCliTranscriptionService', () => {
     });
   });
 
+  it('removes Whisper special tokens from transcript text and confidence words', async () => {
+    const mockProcess = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(mockProcess);
+    const { audioFile, service } = await createFixture();
+    const transcriptionPromise = service.transcribeAudio(audioFile, 100, 200);
+
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalled();
+    });
+
+    const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1] as string[];
+    const outputFileIndex = spawnArgs.indexOf('--output-file');
+    const outputBasePath = spawnArgs[outputFileIndex + 1];
+
+    await fs.writeFile(
+      `${outputBasePath}.json`,
+      JSON.stringify({
+        transcription: [
+          {
+            text: ' hello<|endoftext|>',
+            tokens: [
+              {
+                text: ' hello',
+                id: 7751,
+                p: 0.94
+              },
+              {
+                text: '<|endoftext|>',
+                id: 50257,
+                p: 0.1
+              }
+            ]
+          }
+        ]
+      })
+    );
+    mockProcess.emitClose(0);
+
+    await expect(transcriptionPromise).resolves.toMatchObject({
+      content: 'hello',
+      confidence: {
+        text: 'hello',
+        words: [
+          {
+            text: 'hello',
+            confidenceClass: 'high'
+          }
+        ]
+      }
+    });
+  });
+
   it('kills the whisper process when transcription is canceled', async () => {
     const mockProcess = createMockChildProcess();
     vi.mocked(spawn).mockReturnValue(mockProcess);
