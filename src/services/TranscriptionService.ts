@@ -20,6 +20,10 @@ export type WhisperSegment = {
     text?: string;
     id?: number;
     p?: number;
+    offsets?: {
+      from?: number;
+      to?: number;
+    };
   }>;
 };
 
@@ -35,7 +39,41 @@ export type Transcription = {
   startedAt: number;
   stoppedAt?: number;
   content: string;
+  confidence?: TranscriptConfidence;
   whisperJson?: WhisperJsonOutput;
+};
+
+export type ConfidenceClass = 'high' | 'medium' | 'low';
+
+export type TokenConfidence = {
+  text: string;
+  tokenId: number;
+  confidence: number;
+  startMs?: number;
+  endMs?: number;
+  segmentIndex: number;
+};
+
+export type WordConfidence = {
+  text: string;
+  startOffset: number;
+  endOffset: number;
+  startMs?: number;
+  endMs?: number;
+  confidence: number;
+  confidenceClass: ConfidenceClass;
+  tokens: TokenConfidence[];
+};
+
+export type TranscriptConfidence = {
+  text: string;
+  words: WordConfidence[];
+  averageConfidence?: number;
+  lowConfidenceRanges: Array<{
+    startOffset: number;
+    endOffset: number;
+    confidence: number;
+  }>;
 };
 
 type WhisperRuntimePaths = {
@@ -82,6 +120,7 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
       const jsonContent = await fs.readFile(jsonPath, 'utf8');
       const whisperJson = JSON.parse(jsonContent) as WhisperJsonOutput;
       const content = extractTranscriptionText(whisperJson);
+      const confidence = extractTranscriptConfidence(whisperJson, content);
       this.logger.info(`Finished transcription for audio file ${audioFile.path}.`);
 
       return {
@@ -89,6 +128,7 @@ export class WhisperCliTranscriptionService implements TranscriptionService {
         startedAt,
         stoppedAt,
         content,
+        ...(confidence ? { confidence } : {}),
         whisperJson
       };
     } catch (error) {
@@ -170,9 +210,168 @@ async function getWhisperRuntimePaths(
 
 function extractTranscriptionText(whisperJson: WhisperJsonOutput): string {
   const segments = whisperJson.transcription ?? [];
-  const text = segments.map((segment) => segment.text).join('').trim();
+  const text = normalizeWhisperText(segments.map((segment) => segment.text).join(''));
 
   return text || 'No speech detected.';
+}
+
+function extractTranscriptConfidence(
+  whisperJson: WhisperJsonOutput,
+  fallbackText: string
+): TranscriptConfidence | undefined {
+  const tokenSpans = getTokenSpans(whisperJson);
+
+  if (tokenSpans.length === 0) {
+    return undefined;
+  }
+
+  const rawText = tokenSpans.map((span) => span.token.text).join('');
+  const trimStartOffset = rawText.length - rawText.trimStart().length;
+  const text = normalizeWhisperText(rawText) || fallbackText;
+
+  if (!text || text === 'No speech detected.') {
+    return undefined;
+  }
+
+  const adjustedTokenSpans = tokenSpans
+    .map((span): TokenSpan => ({
+      ...span,
+      startOffset: span.startOffset - trimStartOffset,
+      endOffset: span.endOffset - trimStartOffset
+    }))
+    .filter((span): boolean => span.endOffset > 0 && span.startOffset < text.length);
+  const words = getDisplayWordSpans(text).map((wordSpan): WordConfidence => {
+    const overlappingTokens = adjustedTokenSpans
+      .filter((tokenSpan): boolean => spansOverlap(wordSpan, tokenSpan))
+      .map((tokenSpan): TokenConfidence => tokenSpan.token);
+    const confidence = aggregateWordConfidence(overlappingTokens);
+
+    return {
+      text: wordSpan.text,
+      startOffset: wordSpan.startOffset,
+      endOffset: wordSpan.endOffset,
+      confidence,
+      confidenceClass: classifyConfidence(confidence),
+      tokens: overlappingTokens
+    };
+  });
+  const scoredWords = words.filter((word): boolean => Number.isFinite(word.confidence));
+
+  return {
+    text,
+    words,
+    ...(scoredWords.length > 0
+      ? {
+          averageConfidence:
+            scoredWords.reduce((sum, word): number => sum + word.confidence, 0) / scoredWords.length
+        }
+      : {}),
+    lowConfidenceRanges: words
+      .filter((word): boolean => word.confidenceClass === 'low')
+      .map((word) => ({
+        startOffset: word.startOffset,
+        endOffset: word.endOffset,
+        confidence: word.confidence
+      }))
+  };
+}
+
+type TextSpan = {
+  text: string;
+  startOffset: number;
+  endOffset: number;
+};
+
+type TokenSpan = TextSpan & {
+  token: TokenConfidence;
+};
+
+function getTokenSpans(whisperJson: WhisperJsonOutput): TokenSpan[] {
+  const tokenSpans: TokenSpan[] = [];
+  let currentOffset = 0;
+
+  for (const [segmentIndex, segment] of (whisperJson.transcription ?? []).entries()) {
+    for (const token of segment.tokens ?? []) {
+      if (
+        typeof token.text !== 'string' ||
+        typeof token.id !== 'number' ||
+        typeof token.p !== 'number' ||
+        !Number.isFinite(token.p)
+      ) {
+        continue;
+      }
+
+      const sanitizedTokenText = removeWhisperSpecialTokens(token.text);
+
+      if (!sanitizedTokenText) {
+        continue;
+      }
+
+      const startOffset = currentOffset;
+      const endOffset = startOffset + sanitizedTokenText.length;
+      currentOffset = endOffset;
+      tokenSpans.push({
+        text: sanitizedTokenText,
+        startOffset,
+        endOffset,
+        token: {
+          text: sanitizedTokenText,
+          tokenId: token.id,
+          confidence: token.p,
+          ...(typeof token.offsets?.from === 'number' ? { startMs: token.offsets.from } : {}),
+          ...(typeof token.offsets?.to === 'number' ? { endMs: token.offsets.to } : {}),
+          segmentIndex
+        }
+      });
+    }
+  }
+
+  return tokenSpans;
+}
+
+function getDisplayWordSpans(text: string): TextSpan[] {
+  return Array.from(text.matchAll(/\S+/g)).map((match): TextSpan => {
+    const startOffset = match.index;
+    const word = match[0];
+
+    return {
+      text: word,
+      startOffset,
+      endOffset: startOffset + word.length
+    };
+  });
+}
+
+function spansOverlap(left: TextSpan, right: TextSpan): boolean {
+  return left.startOffset < right.endOffset && right.startOffset < left.endOffset;
+}
+
+function aggregateWordConfidence(tokens: TokenConfidence[]): number {
+  if (tokens.length === 0) {
+    return 1;
+  }
+
+  return Math.min(...tokens.map((token): number => token.confidence));
+}
+
+function classifyConfidence(confidence: number): ConfidenceClass {
+  if (confidence >= 0.85) {
+    return 'high';
+  }
+
+  if (confidence >= 0.6) {
+    return 'medium';
+  }
+
+  return 'low';
+}
+
+function normalizeWhisperText(text: string): string {
+  return removeWhisperSpecialTokens(text).trim();
+}
+
+function removeWhisperSpecialTokens(text: string): string {
+  return text.replace(/<\|.*?\|>/g, '');
 }
 
 async function deleteIfExists(filePath: string): Promise<void> {

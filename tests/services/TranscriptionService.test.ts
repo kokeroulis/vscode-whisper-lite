@@ -96,10 +96,32 @@ describe('WhisperCliTranscriptionService', () => {
         },
         transcription: [
           {
-            text: ' hello'
+            text: ' hello',
+            tokens: [
+              {
+                text: ' hello',
+                id: 7751,
+                p: 0.94,
+                offsets: {
+                  from: 0,
+                  to: 500
+                }
+              }
+            ]
           },
           {
-            text: ' world'
+            text: ' world',
+            tokens: [
+              {
+                text: ' world',
+                id: 1002,
+                p: 0.52,
+                offsets: {
+                  from: 500,
+                  to: 1200
+                }
+              }
+            ]
           }
         ]
       })
@@ -114,6 +136,33 @@ describe('WhisperCliTranscriptionService', () => {
         result: {
           language: 'en'
         }
+      },
+      confidence: {
+        text: 'hello world',
+        averageConfidence: 0.73,
+        lowConfidenceRanges: [
+          {
+            startOffset: 6,
+            endOffset: 11,
+            confidence: 0.52
+          }
+        ],
+        words: [
+          {
+            text: 'hello',
+            startOffset: 0,
+            endOffset: 5,
+            confidence: 0.94,
+            confidenceClass: 'high'
+          },
+          {
+            text: 'world',
+            startOffset: 6,
+            endOffset: 11,
+            confidence: 0.52,
+            confidenceClass: 'low'
+          }
+        ]
       }
     });
     expect(spawn).toHaveBeenCalledWith('/extension-root/vendor/whisper/bin/whisper-cli', [
@@ -151,6 +200,58 @@ describe('WhisperCliTranscriptionService', () => {
 
     await expect(transcriptionPromise).resolves.toMatchObject({
       content: 'No speech detected.'
+    });
+  });
+
+  it('removes Whisper special tokens from transcript text and confidence words', async () => {
+    const mockProcess = createMockChildProcess();
+    vi.mocked(spawn).mockReturnValue(mockProcess);
+    const { audioFile, service } = await createFixture();
+    const transcriptionPromise = service.transcribeAudio(audioFile, 100, 200);
+
+    await vi.waitFor(() => {
+      expect(spawn).toHaveBeenCalled();
+    });
+
+    const spawnArgs = vi.mocked(spawn).mock.calls[0]?.[1] as string[];
+    const outputFileIndex = spawnArgs.indexOf('--output-file');
+    const outputBasePath = spawnArgs[outputFileIndex + 1];
+
+    await fs.writeFile(
+      `${outputBasePath}.json`,
+      JSON.stringify({
+        transcription: [
+          {
+            text: ' hello<|endoftext|>',
+            tokens: [
+              {
+                text: ' hello',
+                id: 7751,
+                p: 0.94
+              },
+              {
+                text: '<|endoftext|>',
+                id: 50257,
+                p: 0.1
+              }
+            ]
+          }
+        ]
+      })
+    );
+    mockProcess.emitClose(0);
+
+    await expect(transcriptionPromise).resolves.toMatchObject({
+      content: 'hello',
+      confidence: {
+        text: 'hello',
+        words: [
+          {
+            text: 'hello',
+            confidenceClass: 'high'
+          }
+        ]
+      }
     });
   });
 
